@@ -1,13 +1,12 @@
-import { COMPONENTS, RANK_METRICS, fmt } from '../lib/utils'
+import { RANK_METRICS, fmt } from '../lib/utils'
 
-// Candidate sort columns, in display order. Only those present in the loaded
-// records are shown as chips (diseases carry different metric subsets).
+// Candidate sort columns, in display order. Only the four headline rankings —
+// the RACS sub-factors (Sep/Feas/Repro/OffMax) are diagnostics, not orderings,
+// and belong in the detail panel.
 const SORT_CANDIDATES = [
-  { key: 'pooled_score', label: 'Pooled' },
-  { key: 'consensus_pct', label: 'Consensus' },
+  { key: 'RCS', label: 'Consensus' },
   { key: 'DSS', label: 'DSS' },
   { key: 'spec_score', label: 'Sensor' },
-  ...COMPONENTS.filter((c) => c.key !== 'RACS'),
   { key: 'RACS', label: 'RACS' },
 ]
 
@@ -34,11 +33,29 @@ export default function GeneList({
     ? SORT_CANDIDATES.filter((c) => probe[c.key] !== undefined && probe[c.key] !== null)
     : SORT_CANDIDATES
 
+  // Some rankings are sorted on one field but READ better as another: the consensus
+  // percentile saturates at 99-100 for every shortlisted gene, so we display the
+  // bootstrap P(top 10), which spreads across 0-1.
+  const valKey =
+    rm.displayKey && probe && probe[rm.displayKey] !== undefined && probe[rm.displayKey] !== null
+      ? rm.displayKey
+      : rm.key
+  const valLabel = valKey === rm.displayKey ? rm.displayLabel : rm.label
+  const valD = valKey === rm.displayKey ? rm.displayD : rm.d
+  // Scale bars across the DISPLAYED range, not 0..max — otherwise a field whose
+  // values all sit near the maximum renders every bar full-width and identical.
+  const vals = genes.map((g) => g[valKey]).filter((v) => Number.isFinite(v))
+  const vMin = vals.length ? Math.min(...vals) : 0
+  const vMax = vals.length ? Math.max(...vals) : 1
+  const span = vMax - vMin || 1
+
   return (
     <div className="panel">
       <div className="panel-head">
         <h2>Ranked targets</h2>
-        <span className="hint">by {rm.label} · {genes.length} shown</span>
+        <span className="hint">
+          By {rm.label} · {genes.length} shown · value = {valLabel}
+        </span>
       </div>
 
       <div className="list-toolbar">
@@ -62,8 +79,8 @@ export default function GeneList({
           {genes.map((g) => {
             const isSel = selected === g.gene
             const inCompare = compareIds.includes(g.gene)
-            const val = g[rm.key]
-            const width = maxMetric > 0 && Number.isFinite(val) ? Math.max(2, (val / maxMetric) * 100) : 0
+            const val = g[valKey]
+            const width = Number.isFinite(val) ? Math.max(3, ((val - vMin) / span) * 100) : 0
             return (
               <li
                 key={g.gene}
@@ -73,8 +90,43 @@ export default function GeneList({
                 <span className="rank">{g._rank}</span>
                 <span className="gene-name">
                   {g.gene}
+                  {g.confidence ? (
+                    <span
+                      title={`Consensus confidence · P(top-10)=${g.p_top10 ?? '—'} · signal agreement=${g.signal_agreement ?? '—'}${g.bio_panels ? ` · ${g.bio_panels}` : ''}`}
+                      style={{
+                        marginLeft: 6,
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        letterSpacing: 0.2,
+                        color: '#fff',
+                        verticalAlign: 'middle',
+                        background:
+                          g.confidence === 'High'
+                            ? '#1c7170'
+                            : g.confidence === 'Medium'
+                              ? '#c98a2b'
+                              : '#a3a3a3',
+                      }}
+                    >
+                      {g.confidence}
+                    </span>
+                  ) : null}
                   <span className="gene-meta">
-                    n={g.n_donors}
+                    {g.n_cohorts_present ?? g.n_cohorts
+                      ? `${g.n_cohorts_present ?? g.n_cohorts} cohort${(g.n_cohorts_present ?? g.n_cohorts) > 1 ? 's' : ''}`
+                      : g.n_donors
+                        ? `${g.n_donors} donors`
+                        : ''}
+                    {Number.isFinite(g.rank_ci_lo) && Number.isFinite(g.rank_ci_hi) ? (
+                      <span
+                        title="Bootstrap 95% interval for this gene's rank. Overlapping intervals = statistically tied."
+                        style={{ marginLeft: 6 }}
+                      >
+                        · rank {g.rank_ci_lo}–{g.rank_ci_hi}
+                      </span>
+                    ) : null}
                     {compareEnabled ? (
                       <>
                         {'  '}
@@ -99,7 +151,7 @@ export default function GeneList({
                       style={{ width: `${width}%`, background: rm.color }}
                     />
                   </span>
-                  <span className="racs-value">{fmt(val, rm.d)}</span>
+                  <span className="racs-value" title={valLabel}>{fmt(val, valD)}</span>
                 </span>
               </li>
             )

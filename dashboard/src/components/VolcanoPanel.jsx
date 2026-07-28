@@ -44,13 +44,15 @@ function VolcanoTooltip({ active, payload, yField }) {
   )
 }
 
-export default function VolcanoPanel({ genes, selectedGene, onSelect, hasFDR }) {
-  const yField = hasFDR ? 'FDR' : 'p_value'
+export default function VolcanoPanel({ genes, selectedGene, onSelect, hasFDR, isFullSet }) {
+  // The dedicated volcano file carries the y value as `y_raw` (+ `y_field` naming it);
+  // the ranked table carries FDR / p_value columns directly.
+  const yField = genes?.[0]?.y_field || (hasFDR ? 'FDR' : 'p_value')
 
   const { sig, nonsig, xDomain, labelSet } = useMemo(() => {
     const pts = genes
       .map((g) => {
-        const raw = g[yField]
+        const raw = g.y_raw !== undefined && g.y_raw !== null ? g.y_raw : g[yField]
         if (raw === undefined || raw === null || g.log2FC === undefined || g.log2FC === null) return null
         // clamp p=0 to a floor so -log10 is finite
         const p = Math.max(raw, 1e-10)
@@ -113,19 +115,19 @@ export default function VolcanoPanel({ genes, selectedGene, onSelect, hasFDR }) 
   return (
     <ChartCard
       title="Differential expression"
-      sub={`volcano · pathogenic vs reference · y = −log10(${yField})`}
+      sub={`Volcano · pathogenic vs reference · y = −log10(${yField})${isFullSet ? ' · all tested genes' : ''}`}
       filename="volcano"
       legend={
         <>
           <span className="lk">
-            <span className="swatch" style={{ background: COLORS.crimson }} /> significant (FDR&lt;0.05, |log2FC|&gt;1)
+            <span className="swatch" style={{ background: COLORS.crimson }} /> Significant (FDR&lt;0.05, |log2FC|&gt;1)
           </span>
           <span className="lk">
-            <span className="swatch" style={{ background: COLORS.tealSoft }} /> not significant
+            <span className="swatch" style={{ background: COLORS.tealSoft }} /> Not significant
           </span>
         </>
       }
-      note="Click any point to select that gene. Up-regulated disease markers sit top-right; these are what DSS ranks."
+      note="Click any point to select that gene. Up-regulated disease markers sit to the right — those are the candidate sensor targets. Left of zero = down in disease (never a sensor target)."
       full
     >
       <ResponsiveContainer width="100%" height={360}>
@@ -146,7 +148,7 @@ export default function VolcanoPanel({ genes, selectedGene, onSelect, hasFDR }) 
             tick={{ fontSize: 11 }}
             stroke={COLORS.border}
             label={{
-              value: 'log2 fold-change  (pathogenic / reference →)',
+              value: 'Log2 fold-change  (pathogenic / reference →)',
               position: 'insideBottom',
               offset: -14,
               fontSize: 11,

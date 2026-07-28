@@ -116,7 +116,7 @@ export default function ComparePanel({ genes, onRemove, onClear }) {
 
       <ChartCard
         title="Component comparison"
-        sub="grouped by RACS factor"
+        sub="Grouped by RACS factor"
         filename="compare_components"
         note="Higher is better for Sep / Feas / Repro / RACS; lower is better for OffMax."
       >

@@ -122,7 +122,11 @@ export default function UmapPanel({ points, geneCols, selectedGene }) {
               className={`seg-btn${colorBy === m.k ? ' active' : ''}`}
               onClick={() => setColorBy(m.k)}
               disabled={m.k === 'cell_type' && cellTypes.length < 2}
-              title={m.k === 'cell_type' && cellTypes.length < 2 ? 'single cell type in this cohort' : undefined}
+              title={
+                m.k === 'cell_type' && cellTypes.length < 2
+                  ? `Disabled: this cohort contains only one cell type (${cellTypes[0] || 'n/a'}), so colouring by cell type would be one flat colour. Use Population to see pathogenic vs healthy.`
+                  : undefined
+              }
             >
               {m.label}
             </button>

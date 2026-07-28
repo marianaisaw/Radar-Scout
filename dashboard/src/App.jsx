@@ -7,6 +7,8 @@ import ComparePanel from './components/ComparePanel'
 import UmapPanel from './components/UmapPanel'
 import VolcanoPanel from './components/VolcanoPanel'
 import CrossCohortPanel from './components/CrossCohortPanel'
+import FormulaPanel from './components/FormulaPanel'
+import ComparisonPanel from './components/ComparisonPanel'
 import { RANK_METRICS, exportCsv, hasCol, extent } from './lib/utils'
 
 const BASE_FILTERS = { RACS: 0, Feas: 0, Sep: 0, Repro: 0, OffMax: 1, detect_P: 0, log2FC: 0 }
@@ -20,14 +22,15 @@ export default function App() {
   const [activeKey, setActiveKey] = useState(null)
   const [genes, setGenes] = useState(null)
   const [umap, setUmap] = useState(null)
+  const [volcano, setVolcano] = useState(null)
   const [crossCohort, setCrossCohort] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // view state — pooled consensus ranking is the default lens
-  const [rankMetric, setRankMetric] = useState('pooled_score')
+  // view state — the cross-cohort Consensus score is the default lens
+  const [rankMetric, setRankMetric] = useState('RCS')
   const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState('pooled_score')
+  const [sortKey, setSortKey] = useState('RCS')
   const [sortDir, setSortDir] = useState('desc')
   const [filters, setFilters] = useState(BASE_FILTERS)
   const [selected, setSelected] = useState(null)
@@ -68,6 +71,7 @@ export default function App() {
     setLoading(true)
     setGenes(null)
     setUmap(null)
+    setVolcano(null)
 
     const jobs = [
       fetch(`${base}data/${info.key}_racs.json`).then((r) => {
@@ -84,12 +88,20 @@ export default function App() {
             .catch(() => null)
         : Promise.resolve(null),
     )
+    // Full-distribution volcano set (the ranked table is up-regulated by construction,
+    // so it cannot show the down-regulated half on its own).
+    jobs.push(
+      fetch(`${base}data/${info.key}_volcano.json`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    )
 
     Promise.all(jobs)
-      .then(([racs, um]) => {
+      .then(([racs, um, vol]) => {
         if (cancelled) return
         setGenes(racs)
         setUmap(um)
+        setVolcano(vol)
         setSelected(racs.length ? racs[0].gene : null)
         setCompareIds([])
         setLoading(false)
@@ -108,11 +120,12 @@ export default function App() {
   const hasFDR = useMemo(() => hasCol(genes, 'FDR'), [genes])
   const isKeloid = info?.disease === 'keloid'
 
-  // if the active rank metric isn't available for this disease, fall back to
-  // the pooled score (always present in the pooled files).
+  // if the active rank metric isn't available for this disease, fall back to the
+  // first metric that is (Consensus normally; RACS for a cohort without it).
   useEffect(() => {
-    if (genes && rankMetric !== 'pooled_score' && !hasCol(genes, rankMetric)) {
-      setRankMetric('pooled_score')
+    if (genes && !hasCol(genes, rankMetric)) {
+      const fallback = Object.keys(RANK_METRICS).find((k) => hasCol(genes, k))
+      if (fallback) setRankMetric(fallback)
     }
   }, [genes, rankMetric])
 
@@ -280,6 +293,8 @@ export default function App() {
         loading={loading}
       />
 
+      <ComparisonPanel info={info} />
+
       {/* rank-metric toggle */}
       <div className="rank-toggle-bar">
         <div className="rank-toggle">
@@ -298,13 +313,9 @@ export default function App() {
             ))}
           </div>
         </div>
-        <span className="rt-hint">
-          <strong style={{ color: RANK_METRICS[rankMetric].color }}>
-            {RANK_METRICS[rankMetric].long}
-          </strong>{' '}
-          — surfacing {RANK_METRICS[rankMetric].blurb}.
-        </span>
       </div>
+
+      <FormulaPanel rankMetric={rankMetric} />
 
       {loading ? (
         <div className="loading">
@@ -357,7 +368,7 @@ export default function App() {
                 <div className="panel">
                   <div className="panel-head">
                     <h2>Compare targets</h2>
-                    <span className="hint">up to 4 genes</span>
+                    <span className="hint">Up to 4 genes</span>
                   </div>
                   <ComparePanel
                     genes={compareGenes}
@@ -397,14 +408,15 @@ export default function App() {
               <div className="panel viz-panel">
                 <div className="panel-head">
                   <h2>Differential expression</h2>
-                  <span className="hint">volcano · click to select</span>
+                  <span className="hint">Volcano · click a point to select</span>
                 </div>
                 <div className="panel-body">
                   <VolcanoPanel
-                    genes={genes}
+                    genes={volcano && volcano.length ? volcano : genes}
                     selectedGene={selected}
                     onSelect={selectGene}
                     hasFDR={hasFDR}
+                    isFullSet={Boolean(volcano && volcano.length)}
                   />
                 </div>
               </div>
@@ -414,7 +426,9 @@ export default function App() {
               <div className="panel viz-panel">
                 <div className="panel-head">
                   <h2>Cell embedding</h2>
-                  <span className="hint">{umapCohort?.cell_type ?? info.disease} · {umapCohort?.cohort ?? 'single-cell atlas'}</span>
+                  <span className="hint" style={{ textTransform: 'capitalize' }}>
+                    {umapCohort?.cell_type ?? info.disease} · {umapCohort?.cohort ?? 'Single-cell atlas'}
+                  </span>
                 </div>
                 <div className="panel-body">
                   <UmapPanel points={umap} geneCols={umapGeneCols} selectedGene={selected} />
@@ -429,14 +443,6 @@ export default function App() {
         </>
       )}
 
-      <footer style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-        <span className="muted" style={{ fontSize: 12 }}>
-          RADAR-Scout · {info?.disease ?? '—'}
-          {info?.n_cohorts ? ` · pooled across ${info.n_cohorts} cohort${info.n_cohorts > 1 ? 's' : ''}` : ''} —
-          scores follow docs/RACS_framework.md. Pooled = cross-cohort consensus; RACS = RADAR
-          compatibility; DSS = disease specificity; Sensor = detection specificity.
-        </span>
-      </footer>
     </div>
   )
 }

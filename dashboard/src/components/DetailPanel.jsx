@@ -149,11 +149,12 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
   // (e) extended metric table — expose the fuller metric set, skipping any
   // columns this disease doesn't carry.
   const metricRows = [
-    { k: 'pooled_score', label: 'Pooled score', v: gene.pooled_score, d: 1 },
-    { k: 'consensus_pct', label: 'Consensus percentile', v: gene.consensus_pct, d: 1 },
+    { k: 'RCS', label: 'Consensus score (percentile)', v: gene.RCS, d: 1 },
+    { k: 'p_top10', label: 'P(gene is a true top-10 target)', v: gene.p_top10, d: 2 },
+    { k: 'signal_agreement', label: 'Metric agreement (0–1)', v: gene.signal_agreement, d: 2 },
     { k: 'spec_score', label: 'Sensor (detection specificity)', v: gene.spec_score, d: 2 },
     { k: 'DSS', label: 'DSS (disease specificity)', v: gene.DSS, d: 2 },
-    { k: 'log2FC', label: 'log2 fold-change', v: gene.log2FC, d: 2 },
+    { k: 'log2FC', label: 'Log2 fold-change', v: gene.log2FC, d: 2 },
     { k: 'detect_P', label: 'Detection in pathogenic (%)', v: gene.detect_P, d: 1 },
     { k: 'detect_H', label: 'Detection in healthy (%)', v: gene.detect_H, d: 1 },
     { k: 'delta_detect', label: 'Δ detection (P − H, %)', v: gene.delta_detect, d: 1 },
@@ -172,17 +173,34 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
           <h2>{gene.gene}</h2>
           <div className="detail-racs">
             <span className="num">
-              {gene.pooled_score != null ? fmt(gene.pooled_score, 1) : fmt(gene.RACS, 3)}
+              {gene.RCS != null ? fmt(gene.RCS, 1) : fmt(gene.RACS, 3)}
             </span>
-            <span className="cap">{gene.pooled_score != null ? 'Pooled' : 'RACS'}</span>
+            <span className="cap">{gene.RCS != null ? 'Consensus' : 'RACS'}</span>
           </div>
-          <span className="rank-badge">rank #{rank}</span>
+          <span className="rank-badge">Rank #{rank}</span>
+          {gene.confidence ? (
+            <span
+              className="rank-badge"
+              title="Confidence tier from cross-cohort stability, agreement across metrics, and biological plausibility"
+              style={{
+                background:
+                  gene.confidence === 'High'
+                    ? '#1c7170'
+                    : gene.confidence === 'Medium'
+                      ? '#c98a2b'
+                      : '#a3a3a3',
+                color: '#fff',
+              }}
+            >
+              {gene.confidence} confidence
+            </span>
+          ) : null}
         </div>
         <div className="kv-strip">
-          {gene.consensus_pct != null ? (
+          {gene.p_top10 != null ? (
             <div className="kv">
-              <span className="k">Consensus</span>
-              <span className="v">{fmt(gene.consensus_pct, 1)}</span>
+              <span className="k">P(top 10)</span>
+              <span className="v">{fmt(gene.p_top10, 2)}</span>
             </div>
           ) : null}
           {gene.RACS != null ? (
@@ -239,7 +257,7 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
         {/* (a) RACS breakdown */}
         <ChartCard
           title="RACS breakdown"
-          sub="multiplicative factors"
+          sub="Multiplicative factors"
           filename={`${gene.gene}_racs_breakdown`}
           note="RACS = Sep · Feas · Repro · (1 − OffMax). Teal = components; crimson = composite."
         >
@@ -321,7 +339,7 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
         {/* (c) abundance-vs-specificity scatter (full width) */}
         <ChartCard
           title="Abundance vs specificity"
-          sub="the RADAR sweet spot · point size ∝ RACS"
+          sub="The RADAR sweet spot · point size ∝ RACS"
           filename={`${gene.gene}_sweet_spot`}
           full
           note="High-Sep / high-Feas is the knee where a target is both specific and abundant enough to fire. The selected gene is crimson."

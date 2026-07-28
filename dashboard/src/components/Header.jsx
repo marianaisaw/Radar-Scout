@@ -26,7 +26,7 @@ export default function Header({
           <h1>
             RADAR<span className="accent">·</span>Scout
           </h1>
-          <span className="tagline">pooled RNA target consensus</span>
+          <span className="tagline">RNA sensor target discovery · organ fibrosis</span>
         </div>
         <div className="controls">
           <div className="control">
@@ -93,7 +93,7 @@ export default function Header({
 
       {cohorts.length ? (
         <div className="cohort-strip">
-          <span className="cohort-lead">Pooled from</span>
+          <span className="cohort-lead">Cohorts</span>
           {cohorts.map((c) => (
             <span className="cohort-pill" key={c.key} title={c.cell_type}>
               {c.cohort}

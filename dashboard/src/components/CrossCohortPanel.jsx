@@ -33,7 +33,7 @@ function XCTooltip({ active, payload }) {
         <span>{fmt(p.GEO, 1)}</span>
       </div>
       <div className="tt-row">
-        <span className="tt-k">consensus</span>
+        <span className="tt-k">Consensus</span>
         <span>{fmt(p.consensus, 1)}</span>
       </div>
     </div>
@@ -100,12 +100,12 @@ export default function CrossCohortPanel({ rows, onSelect }) {
     <div className="panel" style={{ marginTop: 24 }}>
       <div className="panel-head">
         <h2>Cross-cohort consensus</h2>
-        <span className="hint">keloid · CELLxGENE vs GEO GSE163973</span>
+        <span className="hint">Keloid · CELLxGENE vs GEO GSE163973</span>
       </div>
       <div className="panel-body xc-grid">
         <ChartCard
           title="Percentile concordance"
-          sub="each point a gene · diagonal = perfect agreement"
+          sub="Each point a gene · diagonal = perfect agreement"
           filename="cross_cohort_concordance"
           note="Genes hugging the top-right diagonal are robustly high in both cohorts — the consensus targets. Labelled genes are canonical keloid ECM markers."
         >

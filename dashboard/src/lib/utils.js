@@ -21,39 +21,79 @@ export const COMPONENTS = [
   { key: 'OffMax', label: 'OffMax' },
 ]
 
-// The two ways a target can be ranked.
+// The ways a target can be ranked. Each carries the exact formula it computes and a
+// plain-language reading of every term, so the ranking is never a black box.
+// `scale` describes what the displayed number actually means.
 export const RANK_METRICS = {
-  pooled_score: {
-    key: 'pooled_score',
-    label: 'Pooled',
-    long: 'Pooled target ranking',
-    blurb: 'consensus across all cohorts of this disease',
+  RCS: {
+    key: 'RCS',
+    label: 'Consensus',
+    long: 'Consensus score',
     d: 1,
-    color: '#8e1918',
+    color: '#1c7170',
+    // The consensus score itself is a percentile over ~10,000 genes, so every
+    // shortlisted gene sits at 99–100 and the number cannot separate them. Display
+    // the bootstrap P(top 10) instead — it spreads across the whole 0–1 range.
+    displayKey: 'spec_score',
+    displayLabel: 'Sensor score',
+    displayD: 3,
+    scale:
+      'The consensus percentile itself is NOT shown in the list, because it saturates — every shortlisted gene scores 98–100 out of ~10,000 genes, so 100.0 vs 99.9 is meaningless. Instead: genes are ORDERED by consensus, the NUMBER is the Sensor score (how binary the target is: log2FC × Δdetection — it spreads ~4× across the shortlist, so 0.58 really is a much better sensor target than 0.16), and "rank 1–8" next to each gene is the bootstrap rank interval. Two genes whose intervals overlap are statistically tied — at the very top they usually are, and that is a real result, not a display bug.',
+    formula: 'Consensus(g) = [ Σ_cohorts Σ_metrics  w_cohort · w_metric · percentile(g) ] × coverage(g)',
+    summary:
+      'Averages each gene’s percentile rank across every cohort AND every metric, then penalises genes missing from some cohorts. Ranks only calibration-independent signals, so it does not depend on the uncalibrated Hill parameters.',
+    terms: [
+      ['percentile(g)', 'The gene’s rank within one cohort on one metric, 0–100 (100 = best). Using ranks, not raw values, makes the score immune to scale and calibration.'],
+      ['w_cohort = √(donors)', 'Bigger cohorts count more. A 39-donor cohort outweighs a 3-donor one.'],
+      ['w_metric', 'Sensor 1.0 · DSS 1.0 · log2FC 0.8 · Sep 0.3 · Detection 0.3 — weighted toward disease specificity, because Sep alone also rewards mere cell-type identity.'],
+      ['coverage(g) = 0.5 + 0.5·(cohorts with the gene / all cohorts)', 'A gene found in 1 of 4 cohorts cannot outrank one reproduced in all 4.'],
+    ],
   },
   RACS: {
     key: 'RACS',
     label: 'RACS',
     long: 'RADAR compatibility',
-    blurb: 'good RADAR targets',
     d: 3,
     color: '#8e1918',
+    scale: 'Product of four factors, each 0–1. Higher is better. Magnitudes are provisional until the Hill curve is calibrated.',
+    formula: 'RACS(g) = Sep × Feas × Repro × (1 − OffMax)',
+    summary:
+      'The end-to-end sensor score: a target must be specific AND reach the activation threshold AND repeat across donors AND stay quiet off-target. Multiplicative, so any single failure kills it.',
+    terms: [
+      ['Sep', 'Donor-level AUC separating pathogenic donors from off-target donors. 0.5 = no separation, 1.0 = perfect.'],
+      ['Feas', 'Mean RADAR activation in pathogenic cells at the operating threshold — does the target actually clear the threshold?'],
+      ['Repro', '1 − CV of activation across pathogenic donors. Fires in every patient → high; driven by one patient → low.'],
+      ['OffMax', 'Worst-case activation in any off-target population (healthy, bystander cell types). Worst-case, not averaged — a sensor firing anywhere off-target is unsafe.'],
+    ],
   },
   DSS: {
     key: 'DSS',
     label: 'DSS',
     long: 'Disease specificity',
-    blurb: 'markers of this disease',
     d: 2,
     color: '#1c7170',
+    scale: 'Unbounded, ≥ 0. Genes not up-regulated in disease score exactly 0.',
+    formula: 'DSS(g) = max(log2FC, 0) × log10(mean_P + 1)',
+    summary: 'Classic disease-marker score: how strongly up-regulated the gene is, weighted by how abundant it is in the pathogenic cells.',
+    terms: [
+      ['log2FC', 'Log2 ratio of mean expression, pathogenic vs healthy counterpart. Clipped at 0 so down-regulated genes score 0.'],
+      ['mean_P', 'Mean expression in pathogenic cells (CP10k), averaged per donor.'],
+    ],
   },
   spec_score: {
     key: 'spec_score',
     label: 'Sensor',
     long: 'Detection specificity',
-    blurb: 'near-binary sensor markers (POSTN/ADAM12)',
     d: 2,
     color: '#8e1918',
+    scale: 'Unbounded, ≥ 0. This is the most RADAR-native metric.',
+    formula: 'Sensor(g) = max(log2FC, 0) × max(detection_P − detection_ref, 0) / 100',
+    summary:
+      'Rewards near-binary targets: ON in most pathogenic cells, OFF in healthy ones — exactly what a thresholded RNA sensor needs. This is what surfaced ADAM12 (92% of keloid myofibroblasts vs 3% of normal scar).',
+    terms: [
+      ['log2FC', 'Fold-change in expression level, pathogenic vs reference.'],
+      ['detection_P − detection_ref', 'Difference in the percentage of cells expressing the gene at all. A level change is not enough — the sensor needs the gene present in the cell.'],
+    ],
   },
 }
 
