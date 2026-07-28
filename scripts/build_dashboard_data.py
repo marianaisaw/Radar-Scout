@@ -11,15 +11,19 @@ and writes compact JSON into dashboard/public/data/ for the multi-disease dashbo
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make radar_scout importable
+
 OUT = Path("outputs")
 DASH = Path("dashboard/public/data")
 DASH.mkdir(parents=True, exist_ok=True)
 TOP_N = 600
+VOLCANO_MAX = 3500   # SVG point budget for the volcano (keeps the browser responsive)
 
 
 def add_dss(df):
@@ -28,7 +32,46 @@ def add_dss(df):
     return df
 
 
-def emit_disease(name, disease, cell_type, cohort="CELLxGENE"):
+def _source_label(meta):
+    """Human-readable provenance for a cohort pill (GEO accession vs CELLxGENE)."""
+    src = str(meta.get("source", "") or "")
+    if src.upper().startswith("GSE"):
+        return f"GEO {src.upper()}"
+    if "cellxgene" in src.lower():
+        return "CELLxGENE"
+    if meta.get("census_version"):
+        return "CELLxGENE Census"
+    return "CELLxGENE"
+
+
+def _comparison(meta, disease, cell_type):
+    """Spell out EXACTLY which two groups the fold-change contrasts.
+
+    P is always the pathogenic cell type inside diseased tissue. The reference is
+    the same cell type in healthy donors (`H`) when that exists; otherwise the
+    other ("bystander") cell types of the diseased tissue (`B`).
+    """
+    cc = meta.get("cell_counts") or {}
+    nd = meta.get("n_donors") or {}
+    ref = str(meta.get("reference_pop") or "H")
+    ref_pop = "H" if ref.startswith("H") else "B"
+    ct = (cell_type or "fibroblast").split(",")[0].strip()
+    if ref_pop == "H":
+        ref_label = f"{ct} from healthy / control donors"
+        ref_kind = "healthy"
+    else:
+        ref_label = f"other cell types in the same diseased tissue (no healthy arm)"
+        ref_kind = "bystander"
+    return {
+        "p_label": f"{ct} from {disease} tissue",
+        "p_cells": int(cc.get("P", 0) or 0), "p_donors": int(nd.get("P", 0) or 0),
+        "ref_pop": ref_pop, "ref_kind": ref_kind, "ref_label": ref_label,
+        "ref_cells": int(cc.get(ref_pop, 0) or 0), "ref_donors": int(nd.get(ref_pop, 0) or 0),
+        "cell_type": ct, "source": str(meta.get("source") or ""),
+    }
+
+
+def emit_disease(name, disease, cell_type, cohort=None):
     p = OUT / f"{name}_racs.parquet"
     if not p.exists():
         print(f"  [skip {name}] no racs parquet")
@@ -49,7 +92,9 @@ def emit_disease(name, disease, cell_type, cohort="CELLxGENE"):
     meta = {}
     if (OUT / f"{name}_meta.json").exists():
         meta = json.load(open(OUT / f"{name}_meta.json"))
+    cohort = cohort or _source_label(meta)
     return {"key": name, "disease": disease, "cell_type": cell_type, "cohort": cohort,
+            "comparison": _comparison(meta, disease, cell_type),
             "n_genes": int(len(df)), "n_donors": meta.get("n_donors", {}),
             "reference_pop": meta.get("reference_pop"), "has_umap": has_umap,
             "subpop": meta.get("subpop", {})}
@@ -135,7 +180,10 @@ def main():
                 diseases.append(ent)
 
     # ---- one POOLED target ranking per disease (consensus across its cohorts) ----
-    EXCLUDE = {"keloid_v2"}  # weak whole-fibroblast run, superseded
+    # keloid_v2: weak whole-fibroblast run, superseded.
+    # melanoma_*: not a fibrosis — the portal is strictly organ fibrosis. The scored
+    # parquet is kept in outputs/ so it can be restored by deleting it from this set.
+    EXCLUDE = {"keloid_v2", "melanoma_malignant", "melanoma_7b20c613", "melanoma_b617ee1b"}
     entries = [e for e in diseases if e["key"] not in EXCLUDE]
     grouped: dict = {}
     for e in entries:
@@ -152,6 +200,22 @@ def main():
             pooled[fl] = pooled[fl].round(4)
             pooled.head(TOP_N).to_json(DASH / f"{dkey}_racs.json", orient="records")
             n_genes = int(len(pooled))
+            # Volcano needs the WHOLE distribution — the top-N table is up-regulated by
+            # construction, so on its own the down-regulated half of the plot is empty.
+            ycol = "FDR" if "FDR" in pooled.columns else ("p_value" if "p_value" in pooled.columns else None)
+            if "log2FC" in pooled.columns and ycol:
+                v = pooled[["gene", "log2FC", ycol]].dropna().rename(columns={ycol: "y_raw"})
+                # Keep every informative gene (significant or strongly changed, either
+                # direction) and subsample the dense middle — ~10k SVG points stalls the
+                # browser, and the cloud near zero carries no information anyway.
+                keep = v[(v["y_raw"] < 0.05) | (v["log2FC"].abs() > 0.5)]
+                rest = v.drop(keep.index)
+                budget = max(0, VOLCANO_MAX - len(keep))
+                if len(rest) > budget:
+                    rest = rest.sample(n=budget, random_state=0)
+                v = pd.concat([keep, rest]).sort_values("log2FC")
+                v["y_field"] = ycol
+                v.round(4).to_json(DASH / f"{dkey}_volcano.json", orient="records")
         umap_key = next((c["key"] for c in cohorts if c.get("has_umap")), None)
         nd: dict = {}  # merge donor counts across cohorts (max per population)
         for c in cohorts:
@@ -161,7 +225,8 @@ def main():
                     "n_cohorts": len(cohorts), "n_donors": nd, "umap_key": umap_key,
                     "has_umap": umap_key is not None,
                     "cohorts": [{"key": c["key"], "cohort": c.get("cohort") or c["key"],
-                                 "cell_type": c.get("cell_type")} for c in cohorts]})
+                                 "cell_type": c.get("cell_type"),
+                                 "comparison": c.get("comparison")} for c in cohorts]})
     json.dump({"diseases": out}, open(DASH / "diseases.json", "w"), indent=2)
 
     cc = OUT / "cross_cohort_DSS.csv"

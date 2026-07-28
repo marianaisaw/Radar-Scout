@@ -513,9 +513,151 @@ def build_and_score(
     return meta
 
 
+@app.function(image=image, volumes={DATA: vol}, timeout=10800, memory=98304, cpu=8.0)
+def build_cohorts_by_dataset(
+    disease: str = "melanoma",
+    pathogenic_cell_types: str = "malignant cell",
+    out_prefix: str = "",
+    tissue: str = "",
+    min_detect_frac: float = 0.10,
+    max_cells_per_pop: int = 150000,
+    ref_cap: int = 40000,
+    min_cells: int = 300,
+    min_donors: int = 1,
+    max_datasets: int = 12,
+) -> dict:
+    """Score EACH Census dataset of a disease as an INDEPENDENT cohort.
+
+    build_and_score pools every Census dataset into one cohort; this splits by
+    ``dataset_id`` so a disease with N datasets yields N real cross-cohort cohorts
+    (each an independent published study) — the honest way to get cross-cohort
+    validation without hand-parsing GEO. P = pathogenic cell type in dataset d;
+    reference = healthy same-cell-type (shared, fibrosis) or same-dataset bystander
+    (cancers, where 'normal malignant cell' is empty). Writes one
+    ``{out_prefix}_{dataset8}_racs.parquet`` + meta per cohort and appends each to the
+    dashboard manifest so build_dashboard_data pools them automatically.
+    """
+    import cellxgene_census
+    import numpy as np
+    import pandas as pd
+    import scanpy as sc
+    import anndata as ad
+
+    from radar_scout.scoring import score_matrix
+    from radar_scout.genesets import filter_technical
+
+    pct = [c.strip().lower() for c in pathogenic_cell_types.split(",") if c.strip()]
+    out_prefix = out_prefix or disease.replace(" ", "_")
+    tis = f" and tissue_general == '{tissue}'" if tissue else ""
+    rng = np.random.default_rng(0)
+
+    def fetch(vf, label, cap):
+        try:
+            a = cellxgene_census.get_anndata(
+                census, organism="Homo sapiens", obs_value_filter=vf,
+                obs_column_names=["donor_id", "cell_type", "disease", "tissue_general", "assay", "dataset_id"])
+        except Exception as e:
+            print(f"[skip {label}] {type(e).__name__}: {e}")
+            return None
+        if a.n_obs == 0:
+            print(f"[empty {label}]")
+            return None
+        if a.n_obs > cap:
+            a = a[np.sort(rng.choice(a.n_obs, cap, replace=False))].copy()
+        a.obs["radar_pop"] = label
+        return a
+
+    with cellxgene_census.open_soma(census_version=CENSUS_VERSION) as census:
+        obs = census["census_data"]["homo_sapiens"].obs
+        avail = obs.read(value_filter=f"disease == '{disease}'{tis}",
+                         column_names=["cell_type"]).concat().to_pandas()["cell_type"].astype(str)
+        resolved = [c for c in sorted(avail.unique()) if c.lower() in pct or any(t in c.lower() for t in pct)]
+        if not resolved:
+            raise RuntimeError(f"No cell types matched {pct}; available: {sorted(avail.unique())[:25]}")
+        lab_in = "[" + ", ".join(f"'{c}'" for c in resolved) + "]"
+        print(f"[resolve] {disease}: pathogenic = {resolved}")
+        P = fetch(f"disease == '{disease}' and cell_type in {lab_in}{tis}", "P", max_cells_per_pop)
+        if P is None:
+            raise RuntimeError("no pathogenic cells")
+        H = fetch(f"disease == 'normal' and cell_type in {lab_in}{tis}", "H", ref_cap)
+        B = fetch(f"disease == '{disease}'{tis}", "B", max_cells_per_pop)
+        if B is not None:
+            B = B[~B.obs["cell_type"].astype(str).isin(resolved)].copy()
+
+    parts = [x for x in (P, H, B) if x is not None and x.n_obs > 0]
+    adata = ad.concat(parts, join="inner", merge="same")
+    adata.obs_names_make_unique()
+    sc.pp.normalize_total(adata, target_sum=1e4)         # CP10k once; per-cell, reuse per cohort
+    pop_all = adata.obs["radar_pop"].astype(str).to_numpy()
+    dsid = adata.obs["dataset_id"].astype(str).to_numpy()
+    donor = adata.obs["donor_id"].astype(str).to_numpy()
+    genes_all = (adata.var["feature_name"] if "feature_name" in adata.var
+                 else adata.var_names).to_numpy().astype(str)
+    X = adata.X.tocsr() if hasattr(adata.X, "tocsr") else adata.X
+
+    # candidate datasets: P datasets with enough cells & donors, largest first
+    pmask = pop_all == "P"
+    dfp = pd.DataFrame({"ds": dsid[pmask], "donor": donor[pmask]})
+    stats = dfp.groupby("ds").agg(n_cells=("donor", "size"), n_donors=("donor", "nunique"))
+    stats = stats[(stats.n_cells >= min_cells) & (stats.n_donors >= min_donors)].sort_values("n_cells", ascending=False)
+    chosen = list(stats.index[:max_datasets])
+    print(f"[datasets] {len(chosen)} qualifying P datasets of {dfp.ds.nunique()}: "
+          f"{[(d[:8], int(stats.loc[d,'n_cells']), int(stats.loc[d,'n_donors'])) for d in chosen]}")
+
+    cohorts, man_add = [], []
+    for d in chosen:
+        sel = ((pop_all == "P") & (dsid == d)) | (pop_all == "H") | ((pop_all == "B") & (dsid == d))
+        if not (((pop_all == "P") & (dsid == d)).any() and ((pop_all == "H") | ((pop_all == "B") & (dsid == d))).any()):
+            continue
+        idx = np.where(sel)[0]
+        Xd = X[idx]
+        pop_d = pop_all[idx]
+        don_d = donor[idx]
+        det = np.asarray((Xd[pop_d == "P"] > 0).mean(axis=0)).ravel()
+        keep = np.where(det >= min_detect_frac)[0]
+        keep = keep[filter_technical(genes_all[keep])]
+        if len(keep) < 50:
+            print(f"[skip {d[:8]}] only {len(keep)} candidate genes")
+            continue
+        Xc = np.asarray(Xd[:, keep].todense()) if hasattr(Xd, "todense") else np.asarray(Xd[:, keep])
+        df = score_matrix(Xc, genes_all[keep], don_d, pop_d, pos_label="P")
+        ref = "H" if (pop_d == "H").any() else "B"
+        out_name = f"{out_prefix}_{d[:8]}"
+        df.to_parquet(f"{DATA}/{out_name}_racs.parquet")
+        npd = int(len(set(don_d[pop_d == "P"])))
+        meta = {"disease": disease, "source": f"CELLxGENE dataset {d}", "cohort": d[:8],
+                "cell_counts": {p: int((pop_d == p).sum()) for p in set(pop_d)},
+                "n_donors": {p: int(len(set(don_d[pop_d == p]))) for p in set(pop_d)},
+                "n_candidate_genes": int(len(keep)), "reference_pop": ref, "census_version": CENSUS_VERSION,
+                "top25": df.head(25).to_dict(orient="records")}
+        json.dump(meta, open(f"{DATA}/{out_name}_meta.json", "w"), indent=2, default=float)
+        man_add.append({"disease": disease, "out_name": out_name, "cell_type": pathogenic_cell_types,
+                        "n_genes": int(len(keep)), "n_donors_P": npd, "reference_pop": ref, "has_umap": False})
+        cohorts.append({"out_name": out_name, "dataset_id": d, "n_donors_P": npd,
+                        "n_P_cells": int((pop_d == "P").sum()), "top5": df.head(5)["gene"].tolist()})
+        print(f"[cohort {d[:8]}] P={int((pop_d=='P').sum())} cells / {npd} donors, {len(keep)} genes, ref={ref} "
+              f"-> top: {df.head(5)['gene'].tolist()}")
+
+    man_path = f"{DATA}/manifest.json"
+    try:
+        manifest = json.load(open(man_path))
+    except Exception:
+        manifest = {"diseases": []}
+    add_names = {m["out_name"] for m in man_add}
+    manifest["diseases"] = [d for d in manifest["diseases"] if d.get("out_name") not in add_names] + man_add
+    json.dump(manifest, open(man_path, "w"), indent=2)
+    vol.commit()
+    summary = {"disease": disease, "n_cohorts": len(cohorts), "cohorts": cohorts}
+    print(json.dumps(summary, indent=2, default=float))
+    return summary
+
+
 @app.function(image=image, volumes={DATA: vol}, timeout=5400, memory=49152, cpu=8.0)
 def ingest_and_score_geo(gse: str = "GSE163973", disease_label: str = "keloid",
-                         out_name: str = "keloid_geo", min_detect_frac: float = 0.03) -> dict:
+                         out_name: str = "keloid_geo", min_detect_frac: float = 0.03,
+                         disease_tokens: str = "KL,KELOID", control_tokens: str = "",
+                         disease_name: str = "",
+                         fibroblast_markers: str = "COL1A1,COL1A2,LUM,DCN,PDGFRA,COL3A1") -> dict:
     """Ingest an INDEPENDENT GEO scRNA cohort (10x RAW.tar), gate fibroblasts by
     markers, and run RACS. This is the second keloid cohort (disease vs normal-scar)
     for cross-cohort validation. GSE163973 = Deng 2021 (3 keloid + 3 normal scar).
@@ -581,30 +723,78 @@ def ingest_and_score_geo(gse: str = "GSE163973", disease_label: str = "keloid",
             with tarfile.open(nested) as t:
                 t.extractall(gdir)
             search = [os.path.join(r, f) for r, _, ffs in os.walk(gdir) for f in ffs]
-        mtxf = next((f for f in search if "matrix" in os.path.basename(f).lower() and ".mtx" in f.lower()), None)
-        bcf = next((f for f in search if "barcode" in os.path.basename(f).lower()), None)
-        ftf = next((f for f in search if "feature" in os.path.basename(f).lower() or "genes" in os.path.basename(f).lower()), None)
-        if not (mtxf and bcf and ftf):
-            print(f"[skip {gsm}] missing 10x files among: {[os.path.basename(x) for x in search][:6]}")
-            continue
-        X = _read_mtx(mtxf)  # genes x cells
-        barcodes = [ln.split("\t")[0] for ln in _lines(bcf)]
-        symbols = [(ln.split("\t")[1] if "\t" in ln else ln) for ln in _lines(ftf)]
-        if X.shape[0] == len(symbols) and X.shape[1] == len(barcodes):
-            X = X.T.tocsr()  # -> cells x genes
-        a = ad.AnnData(X)
-        a.var_names = symbols[: a.n_vars]
-        a.var_names_make_unique()
-        a.obs_names = [f"{gsm}_{b}" for b in barcodes[: a.n_obs]]
+        # many series ship one 10x .h5 per sample instead of an MTX triplet
+        h5f = next((f for f in search if f.lower().endswith(".h5")), None)
+        if h5f:
+            try:
+                a = sc.read_10x_h5(h5f)
+                a.var_names_make_unique()
+                a.obs_names = [f"{gsm}_{b}" for b in a.obs_names]
+            except Exception as e:
+                print(f"[skip {gsm}] h5 read failed: {type(e).__name__}: {e}")
+                continue
+        else:
+            mtxf = next((f for f in search if "matrix" in os.path.basename(f).lower() and ".mtx" in f.lower()), None)
+            bcf = next((f for f in search if "barcode" in os.path.basename(f).lower()), None)
+            ftf = next((f for f in search if "feature" in os.path.basename(f).lower() or "genes" in os.path.basename(f).lower()), None)
+            if not (mtxf and bcf and ftf):
+                print(f"[skip {gsm}] missing 10x files among: {[os.path.basename(x) for x in search][:6]}")
+                continue
+            X = _read_mtx(mtxf)  # genes x cells (usually)
+            barcodes = [ln.split("\t")[0] for ln in _lines(bcf)]
+            symbols = [(ln.split("\t")[1] if "\t" in ln else ln).strip().strip('"').strip("'")
+                       for ln in _lines(ftf)]
+            dims = set(X.shape)
+            if len(symbols) - 1 in dims and len(symbols) not in dims:   # header row
+                symbols = symbols[1:]
+            if len(barcodes) - 1 in dims and len(barcodes) not in dims:
+                barcodes = barcodes[1:]
+            if X.shape[0] == len(symbols) and X.shape[1] == len(barcodes):
+                X = X.T.tocsr()                      # genes x cells -> cells x genes
+            elif not (X.shape[1] == len(symbols) and X.shape[0] == len(barcodes)):
+                # neither orientation matches: mislabelling would poison the inner-join
+                print(f"[skip {gsm}] shape {X.shape} != genes={len(symbols)} / cells={len(barcodes)}")
+                continue
+            a = ad.AnnData(X)
+            a.var_names = symbols[: a.n_vars]
+            a.var_names_make_unique()
+            a.obs_names = [f"{gsm}_{b}" for b in barcodes[: a.n_obs]]
         a.obs["donor"] = gsm
         blob = " ".join(os.path.basename(x) for x in fs).upper()
-        a.obs["condition"] = "keloid" if ("KL" in blob or "KELOID" in blob) else "normal_scar"
-        print(f"[{gsm}] {a.n_obs} cells x {a.n_vars} genes -> {a.obs['condition'][0]}")
+        dtok = [t.strip().upper() for t in disease_tokens.split(",") if t.strip()]
+        ctok = [t.strip().upper() for t in control_tokens.split(",") if t.strip()]
+        if any(t in blob for t in dtok):
+            cond = "P"
+        elif not ctok or any(t in blob for t in ctok):
+            cond = "H"
+        else:
+            print(f"[skip {gsm}] no disease/control token matched: {blob[:70]}")
+            continue
+        a.obs["condition"] = cond
+        print(f"[{gsm}] {a.n_obs} cells x {a.n_vars} genes -> {cond}")
         adatas.append(a)
     if not adatas:
         raise RuntimeError("no 10x samples parsed from RAW.tar")
 
+    # A series can ship several 10x references (gene symbols vs Ensembl IDs, different
+    # builds). Mixing them collapses the inner-join to a handful of genes, so keep only
+    # the largest self-consistent gene space.
+    from collections import Counter
+    sigs = [(a.n_vars, a.var_names[0], a.var_names[-1]) for a in adatas]
+    modal_sig = Counter(sigs).most_common(1)[0][0]
+    if any(s != modal_sig for s in sigs):
+        keep_a = [a for a, s in zip(adatas, sigs) if s == modal_sig]
+        print(f"[gene-space] keeping {len(keep_a)}/{len(adatas)} samples on the majority "
+              f"reference ({modal_sig[0]} genes); dropping the rest")
+        adatas = keep_a
+
     adata = ad.concat(adatas, join="inner")
+    if adata.n_vars < 1000:
+        raise RuntimeError(f"only {adata.n_vars} genes after inner-join across {len(adatas)} "
+                           f"samples — gene-ID mismatch")
+    conds = set(adata.obs["condition"].astype(str))
+    if not {"P", "H"} <= conds:
+        raise RuntimeError(f"need both disease and control samples on one reference; got {conds}")
     adata.obs_names_make_unique()
 
     # QC
@@ -621,7 +811,7 @@ def ingest_and_score_geo(gse: str = "GSE163973", disease_label: str = "keloid",
         gg = [g for g in genes if g in lg.var_names]
         return np.asarray(lg[:, gg].X.mean(axis=1)).ravel() if gg else np.zeros(lg.n_obs)
 
-    fib = mscore(["COL1A1", "COL1A2", "LUM", "DCN", "PDGFRA", "COL3A1"])
+    fib = mscore([m.strip().upper() for m in fibroblast_markers.split(",") if m.strip()])
     imm = mscore(["PTPRC", "CD3D", "CD68", "LYZ"])
     endo = mscore(["PECAM1", "VWF", "CLDN5"])
     kera = mscore(["KRT14", "KRT5", "KRT1"])
@@ -629,7 +819,7 @@ def ingest_and_score_geo(gse: str = "GSE163973", disease_label: str = "keloid",
     print(f"fibroblasts gated: {int(is_fib.sum())}/{adata.n_obs}")
     adata = adata[is_fib].copy()
 
-    pop = np.where(adata.obs["condition"].values == disease_label, "P", "H")
+    pop = adata.obs["condition"].astype(str).to_numpy()   # already "P"/"H" from token match
     donor = adata.obs["donor"].astype(str).to_numpy()
     genes_all = adata.var_names.to_numpy().astype(str)
     Xp = adata[pop == "P"].X
@@ -645,7 +835,7 @@ def ingest_and_score_geo(gse: str = "GSE163973", disease_label: str = "keloid",
     df.to_parquet(f"{DATA}/{out_name}_racs.parquet")
     counts = {p: int((pop == p).sum()) for p in ["P", "H"]}
     ndon = {p: int(len(set(donor[pop == p]))) for p in ["P", "H"]}
-    meta = {"disease": disease_label, "source": gse, "cohort": "GEO",
+    meta = {"disease": disease_name or disease_label, "source": gse, "cohort": "GEO",
             "cell_counts": counts, "n_donors": ndon, "n_candidate_genes": int(len(genes)),
             "reference_pop": "H (normal scar)", "top25": df.head(25).to_dict(orient="records")}
     with open(f"{DATA}/{out_name}_meta.json", "w") as fh:
@@ -659,6 +849,255 @@ def ingest_and_score_geo(gse: str = "GSE163973", disease_label: str = "keloid",
         print(f"  {str(r['gene'])[:16]:16s} RACS={r['RACS']:.3f}  Sep={r['Sep']:.3f}  "
               f"log2FC={r.get('log2FC', float('nan')):.2f}  detect_P={r.get('detect_P', float('nan')):.0f}%")
     return meta
+
+
+@app.function(image=image, volumes={DATA: vol}, timeout=9000, memory=131072, cpu=8.0)
+def ingest_h5ad(
+    url: str = "",
+    out_name: str = "ipf_adams",
+    disease_name: str = "pulmonary fibrosis",
+    disease_label: str = "idiopathic pulmonary fibrosis",
+    control_label: str = "normal",
+    disease_col: str = "disease",
+    celltype_col: str = "cell_type",
+    donor_col: str = "donor_id",
+    fibroblast_labels: str = "fibroblast,myofibroblast",
+    min_detect_frac: float = 0.05,
+    max_cells_per_pop: int = 60000,
+) -> dict:
+    """Ingest a curated h5ad (e.g. CZ CELLxGENE Discover) as one fibrosis cohort.
+
+    Uses the file's OWN obs annotations (disease / cell_type / donor) to define
+    P (diseased fibroblasts), H (control fibroblasts), and B (diseased non-fibroblast
+    bystanders) — far more robust than parsing GEO filenames. Scores with RACS and
+    appends the cohort to the dashboard manifest under ``disease_name`` so multiple
+    cohorts of the same organ pool automatically.
+    """
+    import os
+    import urllib.request
+
+    import numpy as np
+    import scanpy as sc
+
+    from radar_scout.scoring import score_matrix
+    from radar_scout.genesets import filter_technical
+
+    fib = [s.strip().lower() for s in fibroblast_labels.split(",") if s.strip()]
+    os.makedirs("/tmp/h5", exist_ok=True)
+    path = f"/tmp/h5/{out_name}.h5ad"
+    if not os.path.exists(path):
+        print(f"downloading {url}")
+        urllib.request.urlretrieve(url, path)
+    print(f"[read] {path} ({os.path.getsize(path)/1e9:.2f} GB)")
+    adata = sc.read_h5ad(path)
+    print(f"[loaded] {adata.n_obs} cells x {adata.n_vars} genes; obs: {list(adata.obs.columns)[:20]}")
+
+    def pick(col, *alts):
+        for c in (col, *alts):
+            if c in adata.obs.columns:
+                return c
+        raise RuntimeError(f"none of {(col,)+alts} in obs: {list(adata.obs.columns)}")
+
+    dcol = pick(disease_col, "disease", "condition", "Diagnosis", "diagnosis", "status")
+    ccol = pick(celltype_col, "cell_type", "celltype", "cell_type_annotation", "CellType", "author_cell_type")
+    ncol = pick(donor_col, "donor_id", "donor", "individual", "patient", "subject", "sampleID", "orig.ident")
+    dz = adata.obs[dcol].astype(str).str.lower()
+    ct = adata.obs[ccol].astype(str).str.lower()
+    is_fib = ct.apply(lambda s: any(f in s for f in fib)).to_numpy()
+    is_dz = dz.str.contains(disease_label.lower(), na=False).to_numpy()
+    is_ctrl = dz.str.contains(control_label.lower(), na=False).to_numpy()
+    print(f"[labels] disease vals: {sorted(dz.unique())[:8]} | fib cells={int(is_fib.sum())} "
+          f"dz={int(is_dz.sum())} ctrl={int(is_ctrl.sum())}")
+
+    pop = np.full(adata.n_obs, "", dtype=object)
+    pop[is_fib & is_dz] = "P"
+    pop[is_fib & is_ctrl] = "H"
+    pop[~is_fib & is_dz] = "B"          # diseased non-fibroblast bystanders (cell-type specificity)
+    rng = np.random.default_rng(0)
+    keep_idx = []
+    for lab in ("P", "H", "B"):
+        idx = np.where(pop == lab)[0]
+        if len(idx) > max_cells_per_pop:
+            idx = np.sort(rng.choice(idx, max_cells_per_pop, replace=False))
+        keep_idx.append(idx)
+    keep_idx = np.concatenate(keep_idx) if keep_idx else np.array([], int)
+    adata = adata[keep_idx].copy()
+    pop = pop[keep_idx]
+    if (pop == "P").sum() < 50 or ((pop == "H").sum() < 50 and (pop == "B").sum() < 50):
+        raise RuntimeError(f"insufficient cells: P={int((pop=='P').sum())} H={int((pop=='H').sum())} "
+                           f"B={int((pop=='B').sum())}")
+
+    # raw counts for CP10k: prefer layers['counts'] / raw, else assume .X is counts
+    if "counts" in adata.layers:
+        adata.X = adata.layers["counts"].copy()
+    elif adata.raw is not None and adata.raw.n_vars == adata.n_vars:
+        adata.X = adata.raw.X.copy()
+    sc.pp.normalize_total(adata, target_sum=1e4)
+
+    genes = (adata.var["feature_name"] if "feature_name" in adata.var else adata.var_names).to_numpy().astype(str)
+    donor = adata.obs[ncol].astype(str).to_numpy()
+    X = adata.X.tocsr() if hasattr(adata.X, "tocsr") else adata.X
+    det = np.asarray((X[pop == "P"] > 0).mean(axis=0)).ravel()
+    kp = np.where(det >= min_detect_frac)[0]
+    kp = kp[filter_technical(genes[kp])]
+    Xc = np.asarray(X[:, kp].todense()) if hasattr(X, "todense") else np.asarray(X[:, kp])
+    df = score_matrix(Xc, genes[kp], donor, pop.astype(str), pos_label="P")
+
+    ref = "H" if (pop == "H").any() else "B"
+    df.to_parquet(f"{DATA}/{out_name}_racs.parquet")
+    counts = {p: int((pop == p).sum()) for p in ("P", "H", "B") if (pop == p).any()}
+    ndon = {p: int(len(set(donor[pop == p]))) for p in counts}
+    meta = {"disease": disease_name, "source": url, "cohort": out_name,
+            "cell_counts": counts, "n_donors": ndon, "n_candidate_genes": int(len(kp)),
+            "reference_pop": ref, "top25": df.head(25).to_dict(orient="records")}
+    json.dump(meta, open(f"{DATA}/{out_name}_meta.json", "w"), indent=2, default=float)
+    man_path = f"{DATA}/manifest.json"
+    try:
+        manifest = json.load(open(man_path))
+    except Exception:
+        manifest = {"diseases": []}
+    manifest["diseases"] = [d for d in manifest["diseases"] if d.get("out_name") != out_name]
+    manifest["diseases"].append({"disease": disease_name, "out_name": out_name,
+                                 "cell_type": fibroblast_labels, "n_genes": int(len(kp)),
+                                 "n_donors_P": ndon.get("P", 0), "reference_pop": ref, "has_umap": False})
+    json.dump(manifest, open(man_path, "w"), indent=2)
+    vol.commit()
+    print(json.dumps({"out_name": out_name, "counts": counts, "n_donors": ndon,
+                      "n_genes": int(len(kp)), "top10": df.head(10)["gene"].tolist()}, indent=2))
+    return meta
+
+
+@app.function(image=image, volumes={DATA: vol}, timeout=10800, memory=131072, cpu=8.0)
+def ingest_geo_matrix(
+    gse: str = "GSE135893",
+    out_name: str = "lung_habermann",
+    disease_name: str = "pulmonary fibrosis",
+    matrix_file: str = "",
+    features_file: str = "",
+    barcodes_file: str = "",
+    meta_file: str = "",
+    disease_col: str = "Diagnosis",
+    disease_value: str = "IPF",
+    control_value: str = "Control",
+    celltype_col: str = "celltype",
+    fibroblast_labels: str = "fibroblast,myofibroblast",
+    donor_col: str = "Sample_Name",
+    meta_sep: str = ",",
+    min_detect_frac: float = 0.05,
+    max_cells_per_pop: int = 60000,
+) -> dict:
+    """Ingest a GEO cohort deposited as ONE combined sparse matrix + a per-cell
+    metadata table (Adams GSE136831, Habermann GSE135893, ...). Uses the deposited
+    per-cell annotations (disease / cell_type / donor) to define P/H/B — no marker
+    gating. Appends the cohort to the dashboard manifest under ``disease_name``.
+    """
+    import gzip
+    import os
+    import urllib.request
+
+    import anndata as ad
+    import numpy as np
+    import pandas as pd
+    import scanpy as sc
+    from scipy.io import mmread
+
+    from radar_scout.scoring import score_matrix
+    from radar_scout.genesets import filter_technical
+
+    fib = [s.strip().lower() for s in fibroblast_labels.split(",") if s.strip()]
+    stub = gse[:-3] + "nnn"
+    base = f"https://ftp.ncbi.nlm.nih.gov/geo/series/{stub}/{gse}/suppl/"
+    wd = f"/tmp/{gse}"
+    os.makedirs(wd, exist_ok=True)
+
+    def dl(fn):
+        p = f"{wd}/{fn}"
+        if not os.path.exists(p):
+            print(f"downloading {fn}")
+            urllib.request.urlretrieve(base + fn, p)
+        return p
+
+    def opent(p):
+        return gzip.open(p, "rt") if p.endswith(".gz") else open(p)
+
+    X = mmread(gzip.open(dl(matrix_file)) if matrix_file.endswith(".gz") else dl(matrix_file)).tocsr()
+    feats = [ln.rstrip("\n").split("\t") for ln in opent(dl(features_file))]
+    # symbol = last column; some series quote their fields ("COL5A2") -> strip, else no gene joins
+    genes = np.array([f[-1].strip().strip('"').strip("'") for f in feats])
+    barc = [ln.rstrip("\n").split("\t")[0] for ln in opent(dl(barcodes_file))]
+    dims = set(X.shape)
+    if len(genes) - 1 in dims and len(genes) not in dims:   # features file has a header row
+        genes = genes[1:]
+    if len(barc) - 1 in dims and len(barc) not in dims:      # barcodes file has a header row
+        barc = barc[1:]
+    if X.shape[0] == len(genes) and X.shape[1] == len(barc):
+        X = X.T.tocsr()                                # -> cells x genes
+    adata = ad.AnnData(X)
+    adata.var_names = genes[: adata.n_vars]
+    adata.var_names_make_unique()
+    adata.obs_names = [str(b) for b in barc[: adata.n_obs]]
+
+    sep = "," if meta_file.lower().replace(".gz", "").endswith(".csv") else "\t"  # auto: csv vs tsv/txt
+    meta = pd.read_csv(dl(meta_file), sep=sep, compression="gzip", low_memory=False)
+    meta.columns = [str(c) for c in meta.columns]
+    # align metadata to matrix barcodes: pick the metadata column that best matches barcodes
+    bset = set(adata.obs_names)
+    cand = [(sum(str(v) in bset for v in meta[c].astype(str).head(2000)), c) for c in meta.columns]
+    ov, bc_col = max(cand)
+    if ov > 100:
+        meta = meta.drop_duplicates(bc_col).set_index(meta[bc_col].astype(str))
+        meta = meta.reindex(adata.obs_names)
+    else:
+        meta.index = adata.obs_names[: len(meta)]      # assume row-order alignment
+        meta = meta.reindex(adata.obs_names)
+    print(f"[meta] matched barcode col='{bc_col}' overlap={ov}; cols={list(meta.columns)[:15]}")
+
+    dz = meta[disease_col].astype(str).str.lower()
+    ct = meta[celltype_col].astype(str).str.lower()
+    donor = meta[donor_col].astype(str).to_numpy()
+    is_fib = ct.apply(lambda s: any(f in s for f in fib)).to_numpy()
+    is_dz = dz.str.contains(disease_value.lower(), na=False).to_numpy()
+    is_ctrl = dz.str.contains(control_value.lower(), na=False).to_numpy()
+    print(f"[labels] disease={sorted(dz.dropna().unique())[:8]} | fib={int(is_fib.sum())} "
+          f"P={int((is_fib&is_dz).sum())} H={int((is_fib&is_ctrl).sum())}")
+
+    pop = np.full(adata.n_obs, "", dtype=object)
+    pop[is_fib & is_dz] = "P"
+    pop[is_fib & is_ctrl] = "H"
+    pop[(~is_fib) & is_dz] = "B"
+    rng = np.random.default_rng(0)
+    keep = []
+    for lab in ("P", "H", "B"):
+        idx = np.where(pop == lab)[0]
+        if len(idx) > max_cells_per_pop:
+            idx = np.sort(rng.choice(idx, max_cells_per_pop, replace=False))
+        keep.append(idx)
+    keep = np.concatenate(keep)
+    adata, pop, donor = adata[keep].copy(), pop[keep], donor[keep]
+    if (pop == "P").sum() < 50:
+        raise RuntimeError(f"too few P cells ({int((pop=='P').sum())})")
+
+    sc.pp.normalize_total(adata, target_sum=1e4)
+    genes = adata.var_names.to_numpy().astype(str)
+    Xn = adata.X.tocsr()
+    det = np.asarray((Xn[pop == "P"] > 0).mean(axis=0)).ravel()
+    kp = np.where(det >= min_detect_frac)[0]
+    kp = kp[filter_technical(genes[kp])]
+    Xc = np.asarray(Xn[:, kp].todense())
+    df = score_matrix(Xc, genes[kp], donor, pop.astype(str), pos_label="P")
+
+    ref = "H" if (pop == "H").any() else "B"
+    df.to_parquet(f"{DATA}/{out_name}_racs.parquet")
+    counts = {p: int((pop == p).sum()) for p in ("P", "H", "B") if (pop == p).any()}
+    ndon = {p: int(len(set(donor[pop == p]))) for p in counts}
+    meta_out = {"disease": disease_name, "source": gse, "cohort": out_name,
+                "cell_counts": counts, "n_donors": ndon, "n_candidate_genes": int(len(kp)),
+                "reference_pop": ref, "top25": df.head(25).to_dict(orient="records")}
+    json.dump(meta_out, open(f"{DATA}/{out_name}_meta.json", "w"), indent=2, default=float)
+    vol.commit()
+    print(json.dumps({"out_name": out_name, "counts": counts, "n_donors": ndon,
+                      "top10": df.head(10)["gene"].tolist()}, indent=2))
+    return meta_out
 
 
 @app.local_entrypoint()
