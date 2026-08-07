@@ -62,16 +62,16 @@ function ScatterTooltip({ active, payload }) {
     <div className="rc-tooltip">
       <div className="tt-title">{p.gene}</div>
       <div className="tt-row">
-        <span className="tt-k">Feas (abundance)</span>
-        <span>{fmt(p.Feas, 3)}</span>
+        <span className="tt-k">Δ detection</span>
+        <span>{fmt(p.dx, 1)} pts</span>
       </div>
       <div className="tt-row">
-        <span className="tt-k">Sep (specificity)</span>
-        <span>{fmt(p.Sep, 3)}</span>
+        <span className="tt-k">log2 fold-change</span>
+        <span>{fmt(p.fc, 2)}</span>
       </div>
       <div className="tt-row">
-        <span className="tt-k">RACS</span>
-        <span>{fmt(p.RACS, 3)}</span>
+        <span className="tt-k">Sensor score</span>
+        <span>{fmt(p.sensor, 3)}</span>
       </div>
     </div>
   )
@@ -85,8 +85,8 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
       <div className="detail-empty">
         <p style={{ margin: 0, fontSize: 15 }}>Select a gene to inspect its target profile.</p>
         <p className="muted" style={{ marginTop: 8, fontSize: 13 }}>
-          Cross-cohort reproducibility, RACS breakdown, therapeutic-window activation, and the
-          abundance–specificity sweet spot.
+          Cross-cohort reproducibility, RACS breakdown, therapeutic-window activation, and where
+          the gene sits in detection-difference vs fold-change space.
         </p>
       </div>
     )
@@ -126,14 +126,30 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
       : '—'
 
   // (c) abundance-vs-specificity scatter for ALL genes.
-  const scatterData = allGenes.map((g) => ({
-    gene: g.gene,
-    Feas: g.Feas,
-    Sep: g.Sep,
-    RACS: g.RACS,
-    z: Math.max(30, g.RACS * 340),
-    selected: g.gene === gene.gene,
-  }))
+  // Plot the calibration-independent axes the Consensus ranking actually uses:
+  // x = change in the FRACTION of cells expressing, y = fold-change in level.
+  // Their product is the Sensor score, so the top-right corner is genuinely the
+  // top of the ranking — unlike the old Feas/Sep view, whose "sweet spot" sat
+  // beyond the reachable range of the uncalibrated Hill curve.
+  const scatterData = allGenes
+    .filter((g) => g.delta_detect !== undefined && g.log2FC !== undefined)
+    .map((g) => ({
+      gene: g.gene,
+      dx: g.delta_detect,
+      fc: g.log2FC,
+      sensor: g.spec_score ?? 0,
+      z: Math.max(30, (g.spec_score ?? 0) * 260 + 30),
+      selected: g.gene === gene.gene,
+    }))
+  // Data-driven, not hardcoded: the top quartile on both axes for THIS disease.
+  const q = (arr, p) => {
+    const a = [...arr].sort((x, y) => x - y)
+    return a.length ? a[Math.floor((a.length - 1) * p)] : 0
+  }
+  const dxQ = q(scatterData.map((d) => d.dx), 0.75)
+  const fcQ = q(scatterData.map((d) => d.fc), 0.75)
+  const dxMax = Math.max(1, ...scatterData.map((d) => d.dx))
+  const fcMax = Math.max(1, ...scatterData.map((d) => d.fc))
   const others = scatterData.filter((d) => !d.selected)
   const selPoint = scatterData.filter((d) => d.selected)
 
@@ -338,27 +354,27 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
 
         {/* (c) abundance-vs-specificity scatter (full width) */}
         <ChartCard
-          title="Abundance vs specificity"
-          sub="The RADAR sweet spot · point size ∝ RACS"
-          filename={`${gene.gene}_sweet_spot`}
+          title="What the ranking actually optimises"
+          sub="Detection difference vs fold-change · point size ∝ Sensor score"
+          filename={`${gene.gene}_sensor_space`}
           full
-          note="High-Sep / high-Feas is the knee where a target is both specific and abundant enough to fire. The selected gene is crimson."
+          note="Both axes are calibration-independent, and their product IS the Sensor score — so the shaded corner (top quartile on both) contains the top-ranked targets. The selected gene is crimson."
         >
           <ResponsiveContainer width="100%" height={340}>
             <ScatterChart margin={{ top: 16, right: 24, bottom: 32, left: 8 }}>
               <CartesianGrid stroke={COLORS.border} />
               {/* sweet-spot annotation */}
               <ReferenceArea
-                x1={0.6}
-                x2={1}
-                y1={0.75}
-                y2={1}
+                x1={dxQ}
+                x2={dxMax}
+                y1={fcQ}
+                y2={fcMax}
                 fill={COLORS.tealFaint}
                 fillOpacity={0.35}
                 stroke={COLORS.tealSoft}
                 strokeDasharray="3 3"
                 label={{
-                  value: 'RADAR sweet spot',
+                  value: 'Top quartile on both axes',
                   position: 'insideTopRight',
                   fontSize: 11,
                   fill: COLORS.teal,
@@ -366,13 +382,13 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
               />
               <XAxis
                 type="number"
-                dataKey="Feas"
-                name="Feas"
-                domain={[0, 1]}
+                dataKey="dx"
+                name="Δdetection"
+                domain={[0, Math.ceil(dxMax)]}
                 tick={{ fontSize: 11 }}
                 stroke={COLORS.border}
                 label={{
-                  value: 'Feas  (abundance proxy →)',
+                  value: 'Δ detection  (% more cells expressing, vs healthy →)',
                   position: 'insideBottom',
                   offset: -14,
                   fontSize: 11,
@@ -381,13 +397,13 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
               />
               <YAxis
                 type="number"
-                dataKey="Sep"
-                name="Sep"
-                domain={[0, 1]}
+                dataKey="fc"
+                name="log2FC"
+                domain={[0, Math.ceil(fcMax)]}
                 tick={{ fontSize: 11 }}
                 stroke={COLORS.border}
                 label={{
-                  value: 'Sep  (specificity →)',
+                  value: 'log2 fold-change  (level →)',
                   angle: -90,
                   position: 'insideLeft',
                   offset: 16,

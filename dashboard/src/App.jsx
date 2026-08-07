@@ -9,6 +9,7 @@ import VolcanoPanel from './components/VolcanoPanel'
 import CrossCohortPanel from './components/CrossCohortPanel'
 import FormulaPanel from './components/FormulaPanel'
 import ComparisonPanel from './components/ComparisonPanel'
+import CellTypeExpressionPanel from './components/CellTypeExpressionPanel'
 import { RANK_METRICS, exportCsv, hasCol, extent } from './lib/utils'
 
 const BASE_FILTERS = { RACS: 0, Feas: 0, Sep: 0, Repro: 0, OffMax: 1, detect_P: 0, log2FC: 0 }
@@ -23,6 +24,7 @@ export default function App() {
   const [genes, setGenes] = useState(null)
   const [umap, setUmap] = useState(null)
   const [volcano, setVolcano] = useState(null)
+  const [ctExpr, setCtExpr] = useState(null)
   const [crossCohort, setCrossCohort] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -72,6 +74,7 @@ export default function App() {
     setGenes(null)
     setUmap(null)
     setVolcano(null)
+    setCtExpr(null)
 
     const jobs = [
       fetch(`${base}data/${info.key}_racs.json`).then((r) => {
@@ -95,13 +98,20 @@ export default function App() {
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     )
+    // Absolute per-cell-type abundance for the profiled trigger genes (optional).
+    jobs.push(
+      fetch(`${base}data/${info.key}_celltype_expr.json`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    )
 
     Promise.all(jobs)
-      .then(([racs, um, vol]) => {
+      .then(([racs, um, vol, ct]) => {
         if (cancelled) return
         setGenes(racs)
         setUmap(um)
         setVolcano(vol)
+        setCtExpr(ct)
         setSelected(racs.length ? racs[0].gene : null)
         setCompareIds([])
         setLoading(false)
@@ -404,6 +414,13 @@ export default function App() {
 
           {/* full-width analysis panels */}
           <div className="panels-stack">
+            {ctExpr ? (
+              <CellTypeExpressionPanel
+                data={ctExpr}
+                gene={selected}
+                pathogenicHint={info?.cohorts?.[0]?.comparison?.cell_type}
+              />
+            ) : null}
             {hasFDR || hasCol(genes, 'p_value') ? (
               <div className="panel viz-panel">
                 <div className="panel-head">

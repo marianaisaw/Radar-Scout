@@ -1100,6 +1100,252 @@ def ingest_geo_matrix(
     return meta_out
 
 
+def _profile_table(X, genes, gene_names, cell_type, donor, state, min_cells=10,
+                   lib_size=None, thresholds=None, raw=None, raw_pos=None):
+    """Per (gene x cell_type x disease-state) absolute abundance table.
+
+    Reports DONOR-AWARE means (mean of per-donor means) so one deeply-sequenced
+    patient cannot dominate, in the same CP10k units the scorer uses. CPM is the
+    same quantity x100 and is reported alongside because sensor designers think in
+    counts per million.
+    """
+    import numpy as np
+    import pandas as pd
+
+    pos = {g: i for i, g in enumerate(gene_names)}
+    rows = []
+    keys = pd.DataFrame({"ct": cell_type, "st": state}).groupby(["ct", "st"], sort=False).indices
+    for (ct, st), idx in keys.items():
+        if len(idx) < min_cells:
+            continue
+        dsub = donor[idx]
+        for g in genes:
+            j = pos.get(g)
+            if j is None:
+                continue
+            x = np.asarray(X[idx, j].todense()).ravel() if hasattr(X, "todense") else np.asarray(X[idx, j]).ravel()
+            per_donor_mean, per_donor_det = [], []
+            for d in np.unique(dsub):
+                m = dsub == d
+                if m.sum() >= 3:
+                    per_donor_mean.append(float(x[m].mean()))
+                    per_donor_det.append(float((x[m] > 0).mean()))
+            if not per_donor_mean:
+                per_donor_mean, per_donor_det = [float(x.mean())], [float((x > 0).mean())]
+            mean_cp10k = float(np.mean(per_donor_mean))
+            # CP10k is a FRACTION of each cell's transcriptome, not a molecule count.
+            # A lymphocyte carries far less total mRNA than a fibroblast, so equal CP10k
+            # means very different absolute transcript numbers — and a threshold sensor
+            # responds to molecules. Convert using the cell type's own library size.
+            med_lib = float(np.median(lib_size[idx])) if lib_size is not None else float("nan")
+            est_mol = mean_cp10k * med_lib / 1e4 if lib_size is not None else float("nan")
+            # Fraction of cells that would actually cross the sensor's operating point.
+            thr = (thresholds or {}).get(g)
+            pct_over = float(100 * (x >= thr).mean()) if thr is not None else float("nan")
+            # RAW UMI counts — no normalisation at all. Within one dataset this is the
+            # most direct statement of "how many mRNA molecules of this gene did we
+            # actually detect per cell", which is what a threshold sensor responds to.
+            rc = {}
+            if raw is not None and g in (raw_pos or {}):
+                rv = raw[idx, raw_pos[g]]
+                rv = np.asarray(rv.todense()).ravel() if hasattr(rv, "todense") else np.asarray(rv).ravel()
+                rc = {"mean_counts": float(rv.mean()), "median_counts": float(np.median(rv)),
+                      "max_counts": float(rv.max()),
+                      "pct_ge1": float(100 * (rv >= 1).mean()),
+                      "pct_ge3": float(100 * (rv >= 3).mean()),
+                      "pct_ge10": float(100 * (rv >= 10).mean()),
+                      "mean_counts_in_expressing": float(rv[rv > 0].mean()) if (rv > 0).any() else 0.0}
+            rows.append({
+                "gene": g, "cell_type": str(ct), "state": str(st),
+                "n_cells": int(len(idx)), "n_donors": int(len(set(dsub))), **rc,
+                "mean_cp10k": mean_cp10k, "mean_cpm": mean_cp10k * 100.0,
+                "median_cp10k": float(np.median(per_donor_mean)),
+                "detect_pct": float(100 * np.mean(per_donor_det)),
+                "mean_in_expressing_cp10k": float(x[x > 0].mean()) if (x > 0).any() else 0.0,
+                "median_lib_size": med_lib,
+                "est_molecules_per_cell": est_mol,
+                "pct_over_threshold": pct_over,
+                "threshold_cp10k": float(thr) if thr is not None else float("nan"),
+            })
+    return pd.DataFrame(rows)
+
+
+@app.function(image=image, volumes={DATA: vol}, timeout=9000, memory=131072, cpu=8.0)
+def celltype_expression_profile(
+    genes: str = "POSTN,ADAM12,COL1A1",
+    out_name: str = "keloid_profile",
+    url: str = "",
+    disease: str = "",
+    tissue: str = "",
+    disease_col: str = "disease",
+    celltype_col: str = "cell_type",
+    donor_col: str = "donor_id",
+    control_label: str = "normal",
+    max_cells: int = 250000,
+    thresholds: str = "",
+) -> dict:
+    """Absolute expression of candidate triggers in EVERY cell type of a tissue.
+
+    The scorer collapses all non-target cell types into a single bystander mean,
+    which hides which specific cell type a sensor would misfire in. This resolves
+    that: for each gene it reports mean CP10k / CPM, detection %, and cell/donor
+    counts per cell type, separately for diseased and control tissue.
+
+    Two sources: a curated h5ad (``url``) or the CELLxGENE Census (``disease`` +
+    optional ``tissue``), whichever is given.
+    """
+    import os
+    import urllib.request
+
+    import numpy as np
+    import scanpy as sc
+
+    gl = [g.strip() for g in genes.split(",") if g.strip()]
+
+    if url:
+        os.makedirs("/tmp/prof", exist_ok=True)
+        path = f"/tmp/prof/{out_name}.h5ad"
+        if not os.path.exists(path):
+            print(f"downloading {url}")
+            urllib.request.urlretrieve(url, path)
+        adata = sc.read_h5ad(path)
+        src = url
+    else:
+        import cellxgene_census
+        tis = f" and tissue_general == '{tissue}'" if tissue else ""
+        with cellxgene_census.open_soma(census_version=CENSUS_VERSION) as census:
+            parts = []
+            for dz in (disease, control_label):
+                a = cellxgene_census.get_anndata(
+                    census, organism="Homo sapiens",
+                    obs_value_filter=f"disease == '{dz}'{tis}",
+                    obs_column_names=["donor_id", "cell_type", "disease", "tissue_general"])
+                print(f"[{dz}] {a.n_obs} cells, {a.obs['cell_type'].nunique()} cell types")
+                parts.append(a)
+        import anndata as ad
+        adata = ad.concat(parts, join="inner", merge="same")
+        src = f"CELLxGENE Census {CENSUS_VERSION} · {disease} / {control_label}"
+
+    if adata.n_obs > max_cells:
+        rng = np.random.default_rng(0)
+        adata = adata[np.sort(rng.choice(adata.n_obs, max_cells, replace=False))].copy()
+    print(f"[profile] {adata.n_obs} cells x {adata.n_vars} genes")
+
+    # Resolve genuine raw counts. Many curated h5ads keep normalised (or worse,
+    # scaled/centred) values in .X and the counts in .layers['counts'] or .raw.
+    if "counts" in adata.layers:
+        adata.X = adata.layers["counts"].copy()
+        print("[counts] using layers['counts']")
+    elif adata.raw is not None and adata.raw.shape[0] == adata.n_obs:
+        rw = adata.raw.to_adata()
+        rw.obs = adata.obs.copy()
+        adata = rw
+        print("[counts] using .raw")
+    else:
+        print("[counts] using .X as-is")
+    # Fail loudly rather than emit impossible numbers: scaled/centred matrices give
+    # negative "counts" and negative library sizes.
+    _mn = float(adata.X.min())
+    if _mn < 0:
+        raise RuntimeError(
+            f"matrix has negative values (min={_mn:.3f}) — it is scaled/centred, not counts. "
+            "Molecules per cell cannot be computed from it. Point --url at a dataset whose "
+            "raw counts are in .X, .raw or layers['counts'].")
+    # Decisive test: raw UMI counts are INTEGERS. Log- or CP10k-normalised matrices are
+    # non-negative too, so the sign check above misses them — and normalising an already
+    # log-transformed matrix yields plausible-looking but meaningless numbers.
+    _s = adata.X[: min(2000, adata.n_obs)]
+    _v = _s.data if hasattr(_s, "data") else np.asarray(_s).ravel()
+    _v = _v[_v != 0][:20000]
+    if _v.size and not np.allclose(_v, np.round(_v), atol=1e-6):
+        raise RuntimeError(
+            f"matrix is not integer counts (e.g. {_v[:4]}) — it is already normalised "
+            "(log1p or CP10k). Molecule counts cannot be recovered from it.")
+    # Capture library size AND the raw per-gene counts BEFORE normalising. The raw
+    # counts are the "how many molecules in this cell" answer; CP10k is derived.
+    lib = np.asarray(adata.X.sum(axis=1)).ravel()
+    if float(np.median(lib)) < 100:
+        print(f"[warn] median library size is only {np.median(lib):.1f} — .X may already be normalised; "
+              "molecule counts will not be meaningful.")
+    _gn = (adata.var["feature_name"] if "feature_name" in adata.var else adata.var_names).to_numpy().astype(str)
+    _pos = {g: i for i, g in enumerate(_gn)}
+    keep_idx = [_pos[g] for g in gl if g in _pos]
+    raw_pos = {g: k for k, g in enumerate([g for g in gl if g in _pos])}
+    raw_mat = adata.X[:, keep_idx].copy() if keep_idx else None
+    if raw_mat is not None and hasattr(raw_mat, "tocsr"):
+        raw_mat = raw_mat.tocsr()
+    print(f"[raw] captured counts for {len(keep_idx)}/{len(gl)} genes; "
+          f"median library size {np.median(lib):.0f} UMIs/cell")
+    sc.pp.normalize_total(adata, target_sum=1e4)   # CP10k, same basis as the scorer
+    thr_map = {}
+    for part in thresholds.split(","):
+        if ":" in part:
+            k, v = part.split(":", 1)
+            try:
+                thr_map[k.strip()] = float(v)
+            except ValueError:
+                pass
+
+    def pick(c, *alts):
+        for k in (c, *alts):
+            if k in adata.obs.columns:
+                return k
+        raise RuntimeError(f"missing {c}; obs has {list(adata.obs.columns)[:20]}")
+
+    dcol, ccol, ncol = pick(disease_col, "disease"), pick(celltype_col, "cell_type"), pick(donor_col, "donor_id", "donor")
+    gene_names = (adata.var["feature_name"] if "feature_name" in adata.var else adata.var_names).to_numpy().astype(str)
+    dz_vals = adata.obs[dcol].astype(str).str.lower()
+    # An atlas can hold several diseases (this one carries keloid, localized scleroderma
+    # and injury). Without this filter they would all be pooled as "diseased".
+    if disease:
+        keep = dz_vals.str.contains(disease.lower(), na=False) | dz_vals.str.contains(control_label.lower(), na=False)
+        print(f"[filter] disease='{disease}' vs control='{control_label}': keeping {int(keep.sum())}/{len(keep)} cells "
+              f"(dropped: {sorted(set(adata.obs[dcol].astype(str)[~keep.to_numpy()]))[:6]})")
+        adata = adata[keep.to_numpy()].copy()
+        lib = lib[keep.to_numpy()]
+        if raw_mat is not None:
+            raw_mat = raw_mat[keep.to_numpy()]
+        dz_vals = adata.obs[dcol].astype(str).str.lower()
+    state = np.where(dz_vals.str.contains(control_label.lower(), na=False), "control", "diseased")
+
+    df = _profile_table(adata.X.tocsr() if hasattr(adata.X, "tocsr") else adata.X,
+                        gl, gene_names, adata.obs[ccol].astype(str).to_numpy(),
+                        adata.obs[ncol].astype(str).to_numpy(), state,
+                        lib_size=lib, thresholds=thr_map, raw=raw_mat, raw_pos=raw_pos)
+    if df.empty:
+        raise RuntimeError("no rows produced — check gene names and cell-type column")
+
+    df = df.sort_values(["gene", "state", "mean_cp10k"], ascending=[True, True, False])
+    df.to_parquet(f"{DATA}/{out_name}_celltype_expr.parquet")
+    # Absolute CP10k is only comparable BETWEEN cell types when they were sequenced in
+    # the same experiment. A Census query pools many studies, so the diseased and
+    # control arms can come from different labs/chemistries — record that so the
+    # dashboard can warn instead of inviting a false comparison.
+    same_dataset = bool(url)
+    json.dump({"out_name": out_name, "source": src, "genes": gl,
+               "n_cell_types": int(df["cell_type"].nunique()), "n_rows": int(len(df)),
+               "same_dataset": same_dataset,
+               "comparability": ("Diseased and control cells come from one dataset — absolute "
+                                 "values are directly comparable across cell types."
+                                 if same_dataset else
+                                 "Cells are pooled across many independent studies. Absolute values "
+                                 "are comparable WITHIN a cell type, but between-cell-type and "
+                                 "diseased-vs-control differences are confounded by study, "
+                                 "chemistry and sequencing depth.")},
+              open(f"{DATA}/{out_name}_celltype_expr_meta.json", "w"), indent=2)
+    vol.commit()
+
+    for g in gl:
+        sub = df[(df.gene == g) & (df.state == "diseased")].head(8)
+        if sub.empty:
+            continue
+        print(f"\n=== {g} — diseased tissue, top cell types by abundance ===")
+        for _, r in sub.iterrows():
+            print(f"  {r.cell_type[:38]:40s} {r.mean_cp10k:9.2f} CP10k  ({r.mean_cpm:9.1f} CPM)  "
+                  f"{r.detect_pct:5.1f}% of cells   n={int(r.n_cells)}")
+    return {"out_name": out_name, "n_rows": int(len(df)), "cell_types": int(df["cell_type"].nunique())}
+
+
 @app.local_entrypoint()
 def main():
     """Default: run the cheap disease scan and print what's available."""

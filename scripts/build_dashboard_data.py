@@ -229,6 +229,39 @@ def main():
                                  "comparison": c.get("comparison")} for c in cohorts]})
     json.dump({"diseases": out}, open(DASH / "diseases.json", "w"), indent=2)
 
+    # ---- absolute per-cell-type abundance for candidate triggers ---------------
+    # Which profile parquet backs which disease tab. The scorer only reports a single
+    # pooled "bystander" mean; these tables resolve it to one row per cell type.
+    # Prefer a profile whose diseased and control arms come from ONE dataset — absolute
+    # counts are only comparable when they were sequenced together.
+    PROFILES = {"keloid": "keloid_counts", "pulmonary fibrosis": "lung_ipf_profile",
+                "kidney fibrosis": "kidney_profile", "liver fibrosis": "liver_profile",
+                "cardiac fibrosis": "heart_profile"}
+    for dis, stem in PROFILES.items():
+        p = OUT / f"{stem}_celltype_expr.parquet"
+        if not p.exists():
+            continue
+        pr = pd.read_parquet(p)
+        keep = ["gene", "cell_type", "state", "n_cells", "n_donors",
+                "mean_cp10k", "mean_cpm", "detect_pct", "mean_in_expressing_cp10k",
+                # raw-count and threshold columns (present once the profiler resolved
+                # genuine integer counts) — these are what the safety read relies on
+                "mean_counts", "median_counts", "mean_counts_in_expressing",
+                "pct_ge1", "pct_ge3", "pct_ge10", "median_lib_size",
+                "est_molecules_per_cell", "pct_over_threshold", "threshold_cp10k"]
+        pr = pr[[c for c in keep if c in pr.columns]].copy()
+        for c in pr.select_dtypes("float").columns:
+            pr[c] = pr[c].round(3)
+        meta_p = OUT / f"{stem}_celltype_expr_meta.json"
+        pm = json.load(open(meta_p)) if meta_p.exists() else {}
+        dkey = dis.replace(" ", "_") + "_pooled"
+        json.dump({"source": pm.get("source", ""), "same_dataset": pm.get("same_dataset", False),
+                   "comparability": pm.get("comparability", ""),
+                   "genes": sorted(pr["gene"].unique().tolist()),
+                   "rows": pr.to_dict(orient="records")},
+                  open(DASH / f"{dkey}_celltype_expr.json", "w"))
+        print(f"  celltype profile: {dis} -> {len(pr)} rows, {pr['cell_type'].nunique()} cell types")
+
     cc = OUT / "cross_cohort_DSS.csv"
     if cc.exists():
         pd.read_csv(cc).head(40).round(1).to_json(DASH / "cross_cohort.json", orient="records")
