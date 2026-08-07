@@ -165,6 +165,9 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
   // (e) extended metric table — expose the fuller metric set, skipping any
   // columns this disease doesn't carry.
   const metricRows = [
+    { k: 'tpm_P', label: 'Abundance in pathogenic cells (TPM)', v: gene.tpm_P, d: 0 },
+    { k: 'tpm_H', label: 'Abundance in healthy cells (TPM)', v: gene.tpm_H, d: 0 },
+    { k: 'tpm_B', label: 'Abundance in bystander cell types (TPM)', v: gene.tpm_B, d: 0 },
     { k: 'RCS', label: 'Consensus score (percentile)', v: gene.RCS, d: 1 },
     { k: 'p_top10', label: 'P(gene is a true top-10 target)', v: gene.p_top10, d: 2 },
     { k: 'signal_agreement', label: 'Metric agreement (0–1)', v: gene.signal_agreement, d: 2 },
@@ -213,6 +216,20 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
           ) : null}
         </div>
         <div className="kv-strip">
+          {gene.tpm_P != null ? (
+            <div className="kv">
+              <span className="k">TPM · pathogenic</span>
+              <span className="v" style={{ color: COLORS.crimson }}>
+                {Math.round(gene.tpm_P).toLocaleString()}
+              </span>
+            </div>
+          ) : null}
+          {gene.tpm_H != null ? (
+            <div className="kv">
+              <span className="k">TPM · healthy</span>
+              <span className="v">{Math.round(gene.tpm_H).toLocaleString()}</span>
+            </div>
+          ) : null}
           {gene.p_top10 != null ? (
             <div className="kv">
               <span className="k">P(top 10)</span>

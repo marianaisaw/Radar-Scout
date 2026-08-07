@@ -38,10 +38,10 @@ export const RANK_METRICS = {
     displayLabel: 'Sensor score',
     displayD: 3,
     scale:
-      'The consensus percentile itself is NOT shown in the list, because it saturates — every shortlisted gene scores 98–100 out of ~10,000 genes, so 100.0 vs 99.9 is meaningless. Instead: genes are ORDERED by consensus, the NUMBER is the Sensor score (how binary the target is: log2FC × Δdetection — it spreads ~4× across the shortlist, so 0.58 really is a much better sensor target than 0.16), and "rank 1–8" next to each gene is the bootstrap rank interval. Two genes whose intervals overlap are statistically tied — at the very top they usually are, and that is a real result, not a display bug.',
+      'Genes are ordered by consensus; the number shown is the Sensor score, and "rank 1-8" is the bootstrap rank interval.',
     formula: 'Consensus(g) = [ Σ_cohorts Σ_metrics  w_cohort · w_metric · percentile(g) ] × coverage(g)',
     summary:
-      'Averages each gene’s percentile rank across every cohort AND every metric, then penalises genes missing from some cohorts. Ranks only calibration-independent signals, so it does not depend on the uncalibrated Hill parameters.',
+      'Averages each gene’s percentile rank across every cohort AND every metric, then penalises genes missing from some cohorts.',
     terms: [
       ['percentile(g)', 'The gene’s rank within one cohort on one metric, 0–100 (100 = best). Using ranks, not raw values, makes the score immune to scale and calibration.'],
       ['w_cohort = √(donors)', 'Bigger cohorts count more. A 39-donor cohort outweighs a 3-donor one.'],

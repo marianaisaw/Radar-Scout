@@ -51,18 +51,6 @@ export default function CellTypeExpressionPanel({ data, gene, pathogenicHint }) 
     return { fib, oth, ratio: fib.mean_cp10k / Math.max(oth.mean_cp10k, 1e-9) }
   }, [data, gene])
 
-  // Published ADAR-sensor activation range. CellREADR reports 10-50 TPM is enough to
-  // trigger payload translation; engineered RADARS have been shown down to ~13 TPM.
-  // TPM = CP10k x 100, so this is 0.1-0.5 CP10k. Any cell type above it is predicted
-  // to fire, which is the number that actually decides off-target risk.
-  const TPM_LO = 10, TPM_HI = 50
-  const firing = useMemo(() => {
-    const dz = (data?.rows || []).filter((r) => r.gene === gene && r.state === 'diseased')
-    const over = dz.filter((r) => (r.mean_cpm ?? 0) >= TPM_HI)
-    const targetOver = over.filter((r) => isFib(r.cell_type)).length
-    return { total: dz.length, over: over.length, targetOver, offOver: over.length - targetOver }
-  }, [data, gene])
-
   if (!data?.rows?.length) return null
   const hasGene = data.genes?.includes(gene)
   const max = rows.length ? Math.max(...rows.map((r) => r[unit] ?? 0)) : 1
@@ -96,28 +84,6 @@ export default function CellTypeExpressionPanel({ data, gene, pathogenicHint }) 
           </div>
         ) : (
           <>
-            {firing.total ? (
-              <div
-                style={{
-                  border: `1px solid ${COLORS.border}`, borderRadius: 4,
-                  background: firing.offOver > 0 ? '#FBF3F2' : '#F2F7F5',
-                  padding: '10px 12px', marginBottom: 12, fontSize: 12.5, lineHeight: 1.55,
-                }}
-              >
-                <strong style={{ color: firing.offOver > 0 ? COLORS.crimson : COLORS.teal }}>
-                  Predicted to fire in {firing.over} of {firing.total} cell types
-                  {firing.offOver > 0 ? ` — ${firing.offOver} of them off-target` : ' — all on-target'}
-                </strong>
-                <span className="muted">
-                  {' '}· Published ADAR sensors trigger at <strong>{TPM_LO}–{TPM_HI} TPM</strong>{' '}
-                  (CellREADR; RADARS shown to 13 TPM), and TPM = CP10k × 100. Every cell type above{' '}
-                  {TPM_HI} TPM is predicted to activate the sensor — so at this sensitivity
-                  “expressed at all” genuinely means “will fire”, and the decision rests on the
-                  ratio between target and off-target rather than on absence.
-                </span>
-              </div>
-            ) : null}
-
             {sel ? (
               <div
                 style={{

@@ -101,8 +101,9 @@ def emit_disease(name, disease, cell_type, cohort=None):
 
 
 POOL_METRICS = ["RACS", "DSS", "spec_score", "Sep", "Feas", "Repro", "OffMax", "log2FC",
-                "detect_P", "detect_H", "mean_P", "act_P", "act_H", "act_B", "act_R",
-                "k_op", "Youden_J", "p_value", "FDR", "celltype_spec", "delta_detect"]
+                "detect_P", "detect_H", "mean_P", "mean_H", "mean_B", "act_P", "act_H",
+                "act_B", "act_R", "k_op", "Youden_J", "p_value", "FDR", "celltype_spec",
+                "delta_detect"]
 
 
 def _ensure_metrics(df):
@@ -153,6 +154,11 @@ def pool_cohorts(keys, target_priority=("spec_score", "DSS", "RACS")):
                     if g in t.index and c in t.columns and pd.notna(t.loc[g, c])]
             if vals:
                 rec[c] = round(float(np.mean(vals)), 4)
+        # Absolute abundance in TPM (= CP10k x 100), the unit published ADAR-sensor
+        # activation thresholds are quoted in. Available for every gene of every organ.
+        for src, dst in (("mean_P", "tpm_P"), ("mean_H", "tpm_H"), ("mean_B", "tpm_B")):
+            if src in rec and rec[src] is not None:
+                rec[dst] = round(float(rec[src]) * 100.0, 1)
         rows.append(rec)
     out = pd.DataFrame(rows)
     from radar_scout.genesets import filter_technical  # drop unannotated / technical
