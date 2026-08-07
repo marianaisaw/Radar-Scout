@@ -37,11 +37,21 @@ class HillParams:
         threshold falls outside this band are forced to the nearer band edge.
     """
 
-    K: float = 5.0
+    # Calibrated against the published ADAR-sensor activation range rather than guessed.
+    # CellREADR reports that cellular RNAs expressed at ~10-50 TPM are sufficient to
+    # trigger sensing and payload translation; engineered RADARS have been demonstrated
+    # on endogenous transcripts down to ~13 TPM.
+    #   Kaseniit et al., Nat Biotechnol 2023 (RADARS)      doi:10.1038/s41587-022-01493-x
+    #   CellREADR, bioRxiv 2024                            doi:10.1101/2024.11.26.625312
+    # Units here are CP10k, and TPM = CP10k x 100, so 10-50 TPM = 0.1-0.5 CP10k.
+    # NOTE: the previous placeholders (K=5.0, band 1.0-50.0 CP10k = 500-5000 TPM) were
+    # 10-100x stricter than anything the literature requires, which systematically
+    # understated Feas and therefore RACS. Re-score cohorts to propagate this.
+    K: float = 0.3        # ~30 TPM, middle of the reported activation range
     n: float = 2.0
     L: float = 0.02
-    K_lo: float = 1.0
-    K_hi: float = 50.0
+    K_lo: float = 0.1     # ~10 TPM, the easiest reported trigger point
+    K_hi: float = 0.5     # ~50 TPM, the conservative end of the range
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.L < 1.0):
