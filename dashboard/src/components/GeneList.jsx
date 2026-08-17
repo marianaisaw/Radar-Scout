@@ -1,22 +1,34 @@
 import { RANK_METRICS, fmt } from '../lib/utils'
+import FormulaPanel from './FormulaPanel'
 
-// Candidate sort columns, in display order. Only the four headline rankings —
-// the RACS sub-factors (Sep/Feas/Repro/OffMax) are diagnostics, not orderings,
-// and belong in the detail panel.
 const SORT_CANDIDATES = [
-  { key: 'RCS', label: 'Consensus' },
-  { key: 'DSS', label: 'DSS' },
   { key: 'spec_score', label: 'Sensor' },
   { key: 'RACS', label: 'RACS' },
+  { key: 'DSS', label: 'DSS' },
+  { key: 'RCS', label: 'Consensus' },
 ]
 
-// Left ranked list. Rows show rank, italic gene name, a slim bar for the active
-// rank metric, and its numeric value. The bar/value follow whichever metric is
-// active (crimson for pooled/RACS, teal for DSS). Sortable by any present
-// column; clicking selects.
+function cohortDots(nPresent, nTotal) {
+  const total = Math.max(nTotal || nPresent || 0, nPresent || 0, 1)
+  const present = nPresent ?? total
+  return Array.from({ length: Math.min(total, 8) }, (_, i) => (
+    <span key={i} className={`gene-dot${i < present ? ' on' : ''}`} />
+  ))
+}
+
+function confidenceClass(confidence) {
+  if (confidence === 'High') return 'high'
+  if (confidence === 'Medium') return 'medium'
+  return 'low'
+}
+
+function confidenceLabel(confidence) {
+  if (!confidence) return ''
+  return `${confidence} confidence`
+}
+
 export default function GeneList({
   genes,
-  maxMetric,
   rankMetric,
   selected,
   onSelect,
@@ -33,33 +45,34 @@ export default function GeneList({
     ? SORT_CANDIDATES.filter((c) => probe[c.key] !== undefined && probe[c.key] !== null)
     : SORT_CANDIDATES
 
-  // Some rankings are sorted on one field but READ better as another: the consensus
-  // percentile saturates at 99-100 for every shortlisted gene, so we display the
-  // bootstrap P(top 10), which spreads across 0-1.
   const valKey =
     rm.displayKey && probe && probe[rm.displayKey] !== undefined && probe[rm.displayKey] !== null
       ? rm.displayKey
       : rm.key
   const valLabel = valKey === rm.displayKey ? rm.displayLabel : rm.label
   const valD = valKey === rm.displayKey ? rm.displayD : rm.d
-  // Scale bars across the DISPLAYED range, not 0..max — otherwise a field whose
-  // values all sit near the maximum renders every bar full-width and identical.
   const vals = genes.map((g) => g[valKey]).filter((v) => Number.isFinite(v))
   const vMin = vals.length ? Math.min(...vals) : 0
   const vMax = vals.length ? Math.max(...vals) : 1
   const span = vMax - vMin || 1
 
   return (
-    <div className="panel">
+    <div className="panel ranks-panel glass-card">
       <div className="panel-head">
         <h2>Ranked targets</h2>
         <span className="hint">
-          By {rm.label} · {genes.length} shown · value = {valLabel}
+          {genes.length > 6
+            ? `Top ranks · ${genes.length} total`
+            : `${genes.length} shown`}
+          {rankMetric === 'spec_score' ? '' : ` · ${rm.label}`}
         </span>
       </div>
 
+      <div className="ranks-formula">
+        <FormulaPanel key={rankMetric} rankMetric={rankMetric} compact />
+      </div>
+
       <div className="list-toolbar">
-        <span className="sort-label">Sort</span>
         {sortChips.map((c) => (
           <button
             key={c.key}
@@ -75,88 +88,93 @@ export default function GeneList({
       {genes.length === 0 ? (
         <div className="empty-note">No genes match the current filters or search.</div>
       ) : (
-        <ul className="gene-list">
+        <div className="gene-rank-scroll-wrap">
+          <div className="gene-rank-header" aria-hidden="true">
+            <span>#</span>
+            <span>Target · {valLabel}</span>
+          </div>
+          <ul className="gene-rank-list" aria-label="Ranked targets">
           {genes.map((g) => {
             const isSel = selected === g.gene
             const inCompare = compareIds.includes(g.gene)
             const val = g[valKey]
-            const width = Number.isFinite(val) ? Math.max(3, ((val - vMin) / span) * 100) : 0
+            const width = Number.isFinite(val) ? Math.max(8, ((val - vMin) / span) * 100) : 0
+            const nCohorts = g.n_cohorts_present ?? g.n_cohorts
+            const rankTier =
+              g._rank === 1 ? 'gold' : g._rank === 2 ? 'silver' : g._rank === 3 ? 'bronze' : ''
             return (
               <li
                 key={g.gene}
-                className={`gene-row${isSel ? ' selected' : ''}`}
+                className={`gene-rank-row${isSel ? ' selected' : ''}${rankTier ? ` rank-${rankTier}` : ''}`}
                 onClick={() => onSelect(g.gene)}
               >
-                <span className="rank">{g._rank}</span>
-                <span className="gene-name">
-                  {g.gene}
-                  {g.confidence ? (
-                    <span
-                      title={`Consensus confidence · P(top-10)=${g.p_top10 ?? '—'} · signal agreement=${g.signal_agreement ?? '—'}${g.bio_panels ? ` · ${g.bio_panels}` : ''}`}
-                      style={{
-                        marginLeft: 6,
-                        padding: '1px 5px',
-                        borderRadius: 3,
-                        fontSize: 10,
-                        fontWeight: 600,
-                        letterSpacing: 0.2,
-                        color: '#fff',
-                        verticalAlign: 'middle',
-                        background:
-                          g.confidence === 'High'
-                            ? '#1c7170'
-                            : g.confidence === 'Medium'
-                              ? '#c98a2b'
-                              : '#a3a3a3',
-                      }}
-                    >
-                      {g.confidence}
-                    </span>
-                  ) : null}
-                  <span className="gene-meta">
-                    {g.n_cohorts_present ?? g.n_cohorts
-                      ? `${g.n_cohorts_present ?? g.n_cohorts} cohort${(g.n_cohorts_present ?? g.n_cohorts) > 1 ? 's' : ''}`
-                      : g.n_donors
-                        ? `${g.n_donors} donors`
-                        : ''}
-                    {Number.isFinite(g.rank_ci_lo) && Number.isFinite(g.rank_ci_hi) ? (
-                      <span
-                        title="Bootstrap 95% interval for this gene's rank. Overlapping intervals = statistically tied."
-                        style={{ marginLeft: 6 }}
-                      >
-                        · rank {g.rank_ci_lo}–{g.rank_ci_hi}
-                      </span>
-                    ) : null}
-                    {compareEnabled ? (
-                      <>
-                        {'  '}
-                        <button
-                          className="link-btn"
-                          style={{ fontSize: 11 }}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onToggleCompare(g.gene)
-                          }}
-                        >
-                          {inCompare ? '− compare' : '+ compare'}
-                        </button>
-                      </>
-                    ) : null}
-                  </span>
+                <span className="gene-rank-num" aria-label={`Rank ${g._rank}`}>
+                  {g._rank}
                 </span>
-                <span className="racs-cell">
-                  <span className="racs-bar-track">
+
+                <div className="gene-rank-body">
+                  <div className="gene-card-top">
+                    <span className="gene-avatar" aria-hidden="true">
+                      {g.gene.slice(0, 2).toUpperCase()}
+                    </span>
+                    <div className="gene-card-id">
+                      <div className="gene-card-name-row">
+                        <span className="gene-card-name">{g.gene}</span>
+                        {g.confidence ? (
+                          <span className={`confidence-badge rank-confidence ${confidenceClass(g.confidence)}`}>
+                            {confidenceLabel(g.confidence)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <span className="gene-card-score" title={valLabel}>
+                      {fmt(val, valD)}
+                    </span>
+                  </div>
+
+                  <div className="gene-card-bar" aria-hidden="true">
                     <span
-                      className="racs-bar-fill"
+                      className="gene-card-bar-fill"
                       style={{ width: `${width}%`, background: rm.color }}
                     />
-                  </span>
-                  <span className="racs-value" title={valLabel}>{fmt(val, valD)}</span>
-                </span>
+                  </div>
+
+                  <div className="gene-card-foot">
+                    <span className="gene-card-meta">
+                      {nCohorts
+                        ? `${nCohorts} cohort${nCohorts > 1 ? 's' : ''}`
+                        : g.n_donors
+                          ? `${g.n_donors} donors`
+                          : valLabel}
+                    </span>
+                    <span className="gene-dots" aria-hidden="true">
+                      {cohortDots(g.n_cohorts_present, g.n_cohorts)}
+                    </span>
+                  </div>
+                </div>
+
+                {compareEnabled ? (
+                  <button
+                    type="button"
+                    className="gene-card-compare"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onToggleCompare(g.gene)
+                    }}
+                  >
+                    {inCompare ? 'Remove' : 'Compare'}
+                  </button>
+                ) : null}
               </li>
             )
           })}
-        </ul>
+          </ul>
+          {genes.length > 6 ? (
+            <div className="gene-rank-scroll-hint">
+              <span>Scroll for all {genes.length} targets</span>
+            </div>
+          ) : null}
+        </div>
       )}
     </div>
   )

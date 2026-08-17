@@ -5,11 +5,11 @@ export const COLORS = {
   crimsonSoft: '#b45150',
   teal: '#1c7170',
   tealSoft: '#5aa3a2',
-  tealFaint: '#cfe3e3',
-  ink: '#141414',
-  muted: '#6b6b6b',
-  border: '#e6e6e6',
-  borderStrong: '#d5d5d5',
+  tealFaint: '#e6f3f3',
+  ink: '#1a2332',
+  muted: '#5c6b7f',
+  border: '#c5ced9',
+  borderStrong: '#a8b4c4',
 }
 
 // Component fields shown across list / filters / compare.
@@ -25,28 +25,20 @@ export const COMPONENTS = [
 // plain-language reading of every term, so the ranking is never a black box.
 // `scale` describes what the displayed number actually means.
 export const RANK_METRICS = {
-  RCS: {
-    key: 'RCS',
-    label: 'Consensus',
-    long: 'Consensus score',
-    d: 1,
-    color: '#1c7170',
-    // The consensus score itself is a percentile over ~10,000 genes, so every
-    // shortlisted gene sits at 99–100 and the number cannot separate them. Display
-    // the bootstrap P(top 10) instead — it spreads across the whole 0–1 range.
-    displayKey: 'spec_score',
-    displayLabel: 'Sensor score',
-    displayD: 3,
-    scale:
-      'Genes are ordered by consensus; the number shown is the Sensor score, and "rank 1-8" is the bootstrap rank interval.',
-    formula: 'Consensus(g) = [ Σ_cohorts Σ_metrics  w_cohort · w_metric · percentile(g) ] × coverage(g)',
+  spec_score: {
+    key: 'spec_score',
+    label: 'Sensor',
+    long: 'Detection specificity',
+    d: 3,
+    color: '#8e1918',
+    primary: true,
+    scale: 'Unbounded, ≥ 0. Primary metric for RADAR sensor suitability.',
+    formula: 'Sensor(g) = max(log2FC, 0) × max(detection_P − detection_ref, 0) / 100',
     summary:
-      'Averages each gene’s percentile rank across every cohort AND every metric, then penalises genes missing from some cohorts.',
+      'Rewards near-binary targets: ON in most pathogenic cells, OFF in healthy ones — exactly what a thresholded RNA sensor needs.',
     terms: [
-      ['percentile(g)', 'The gene’s rank within one cohort on one metric, 0–100 (100 = best). Using ranks, not raw values, makes the score immune to scale and calibration.'],
-      ['w_cohort = √(donors)', 'Bigger cohorts count more. A 39-donor cohort outweighs a 3-donor one.'],
-      ['w_metric', 'Sensor 1.0 · DSS 1.0 · log2FC 0.8 · Sep 0.3 · Detection 0.3 — weighted toward disease specificity, because Sep alone also rewards mere cell-type identity.'],
-      ['coverage(g) = 0.5 + 0.5·(cohorts with the gene / all cohorts)', 'A gene found in 1 of 4 cohorts cannot outrank one reproduced in all 4.'],
+      ['log2FC', 'Fold-change in expression level, pathogenic vs reference.'],
+      ['detection_P − detection_ref', 'Difference in the percentage of cells expressing the gene at all. A level change is not enough — the sensor needs the gene present in the cell.'],
     ],
   },
   RACS: {
@@ -80,19 +72,25 @@ export const RANK_METRICS = {
       ['mean_P', 'Mean expression in pathogenic cells (CP10k), averaged per donor.'],
     ],
   },
-  spec_score: {
-    key: 'spec_score',
-    label: 'Sensor',
-    long: 'Detection specificity',
-    d: 2,
-    color: '#8e1918',
-    scale: 'Unbounded, ≥ 0. This is the most RADAR-native metric.',
-    formula: 'Sensor(g) = max(log2FC, 0) × max(detection_P − detection_ref, 0) / 100',
+  RCS: {
+    key: 'RCS',
+    label: 'Consensus',
+    long: 'Consensus score',
+    d: 1,
+    color: '#1c7170',
+    displayKey: 'spec_score',
+    displayLabel: 'Sensor score',
+    displayD: 3,
+    scale:
+      'Percentile consensus across cohorts and metrics. When sorting by Consensus, the bar shows Sensor score for readability.',
+    formula: 'Consensus(g) = [ Σ_cohorts Σ_metrics  w_cohort · w_metric · percentile(g) ] × coverage(g)',
     summary:
-      'Rewards near-binary targets: ON in most pathogenic cells, OFF in healthy ones — exactly what a thresholded RNA sensor needs. This is what surfaced ADAM12 (92% of keloid myofibroblasts vs 3% of normal scar).',
+      'Averages each gene’s percentile rank across every cohort AND every metric, then penalises genes missing from some cohorts.',
     terms: [
-      ['log2FC', 'Fold-change in expression level, pathogenic vs reference.'],
-      ['detection_P − detection_ref', 'Difference in the percentage of cells expressing the gene at all. A level change is not enough — the sensor needs the gene present in the cell.'],
+      ['percentile(g)', 'The gene’s rank within one cohort on one metric, 0–100 (100 = best). Using ranks, not raw values, makes the score immune to scale and calibration.'],
+      ['w_cohort = √(donors)', 'Bigger cohorts count more. A 39-donor cohort outweighs a 3-donor one.'],
+      ['w_metric', 'Sensor 1.0 · DSS 1.0 · log2FC 0.8 · Sep 0.3 · Detection 0.3 — weighted toward disease specificity.'],
+      ['coverage(g) = 0.5 + 0.5·(cohorts with the gene / all cohorts)', 'A gene found in 1 of 4 cohorts cannot outrank one reproduced in all 4.'],
     ],
   },
 }
@@ -106,6 +104,17 @@ export const PALETTE = [
 
 export const fmt = (v, d = 3) =>
   v === null || v === undefined || Number.isNaN(v) ? '—' : Number(v).toFixed(d)
+
+/** Min–max donors per cohort (not summed — pooled ranking keeps cohorts separate). */
+export function donorRangeFromCohorts(cohorts, field = 'p_donors') {
+  const vals = (cohorts || [])
+    .map((c) => c.comparison?.[field])
+    .filter((n) => typeof n === 'number' && n > 0)
+  if (!vals.length) return null
+  const lo = Math.min(...vals)
+  const hi = Math.max(...vals)
+  return { lo, hi, label: lo === hi ? `${hi}` : `${lo}–${hi}` }
+}
 
 // True if the field exists (and isn't null) on the first record.
 export const hasCol = (rows, key) =>

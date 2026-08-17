@@ -1,68 +1,47 @@
 import { useState } from 'react'
-import { RANK_METRICS, COLORS } from '../lib/utils'
+import { RANK_METRICS } from '../lib/utils'
 
 // Shows exactly what the active ranking computes: the equation, what the number
 // on screen means, and a plain-language reading of every term. Collapsed to the
 // equation by default; "What do these terms mean?" expands the glossary.
-export default function FormulaPanel({ rankMetric }) {
+export default function FormulaPanel({ rankMetric, compact = false }) {
   const [open, setOpen] = useState(false)
   const m = RANK_METRICS[rankMetric]
   if (!m) return null
 
   return (
-    <div className="panel" style={{ marginBottom: 14 }}>
-      <div className="panel-body" style={{ padding: '14px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-          <strong style={{ color: m.color, fontSize: 14 }}>{m.long}</strong>
-          <span className="muted" style={{ fontSize: 12.5 }}>{m.summary}</span>
+    <div className={compact ? 'formula-compact' : 'panel formula-panel'}>
+      <div className={compact ? 'formula-compact-body' : 'panel-body formula-panel-body'}>
+        <div className="formula-head">
+          <strong className="formula-title" style={{ color: m.color }}>
+            {m.long}
+          </strong>
+          <span className="formula-summary">{m.summary}</span>
         </div>
 
-        <div
-          style={{
-            marginTop: 10,
-            padding: '10px 12px',
-            background: '#fafafa',
-            border: `1px solid ${COLORS.border}`,
-            borderRadius: 4,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontSize: 12.5,
-            color: COLORS.ink,
-            overflowX: 'auto',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {m.formula}
-        </div>
+        <div className="formula-equation">{m.formula}</div>
 
-        <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-          <strong style={{ color: COLORS.ink }}>Reading the number:</strong> {m.scale}
+        <div className="formula-scale">
+          <strong>Reading the number:</strong> {m.scale}
         </div>
 
         <button
-          className="link-btn"
-          style={{ marginTop: 8, fontSize: 12 }}
+          type="button"
+          className="link-btn formula-terms-toggle"
           onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
         >
           {open ? '− Hide term definitions' : '+ What do these terms mean?'}
         </button>
 
         {open ? (
-          <dl style={{ margin: '10px 0 0', display: 'grid', gap: 8 }}>
+          <dl className="formula-terms">
             {m.terms.map(([term, def]) => (
-              <div key={term} style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2 }}>
-                <dt
-                  style={{
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                    fontSize: 12,
-                    color: m.color,
-                    fontWeight: 600,
-                  }}
-                >
+              <div key={term} className="formula-term">
+                <dt className="formula-term-name" style={{ color: m.color }}>
                   {term}
                 </dt>
-                <dd className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>
-                  {def}
-                </dd>
+                <dd className="formula-term-def">{def}</dd>
               </div>
             ))}
           </dl>

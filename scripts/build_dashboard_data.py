@@ -183,6 +183,11 @@ def main():
         if name not in seen and (OUT / f"{name}_racs.parquet").exists():
             ent = emit_disease(name, dis, ct, cohort=coh)
             if ent:
+                if name == "keloid_deng_mfb":
+                    comp = ent["comparison"]
+                    comp["p_label"] = "Keloid pathological MFB (Deng cluster 3)"
+                    comp["ref_kind"] = "control"
+                    comp["ref_label"] = "Normal-scar fibroblasts (same cell type, non-keloid scar tissue)"
                 diseases.append(ent)
 
     # ---- one POOLED target ranking per disease (consensus across its cohorts) ----

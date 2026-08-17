@@ -22,7 +22,7 @@ export default function Filters({ filters, setFilters, activeCount, defaults, bo
   const fc = bounds?.log2FC || [0, 6]
 
   return (
-    <div className="panel">
+    <div className="panel glass-card filters-panel">
       <button className={`filters-toggle${open ? ' open' : ''}`} onClick={() => setOpen((o) => !o)}>
         <span className="caret">▶</span>
         Filters

@@ -1,24 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import Header from './components/Header'
+import DiseaseNav from './components/DiseaseNav'
 import GeneList from './components/GeneList'
 import Filters from './components/Filters'
 import DetailPanel from './components/DetailPanel'
 import ComparePanel from './components/ComparePanel'
-import UmapPanel from './components/UmapPanel'
-import VolcanoPanel from './components/VolcanoPanel'
-import CrossCohortPanel from './components/CrossCohortPanel'
-import FormulaPanel from './components/FormulaPanel'
 import ComparisonPanel from './components/ComparisonPanel'
-import CellTypeExpressionPanel from './components/CellTypeExpressionPanel'
 import { RANK_METRICS, exportCsv, hasCol, extent } from './lib/utils'
 
 const BASE_FILTERS = { RACS: 0, Feas: 0, Sep: 0, Repro: 0, OffMax: 1, detect_P: 0, log2FC: 0 }
 
-// Non-gene keys inside a umap record; everything else is an expression column.
 const UMAP_META_KEYS = new Set(['UMAP1', 'UMAP2', 'cell_type', 'pop', 'donor'])
 
 export default function App() {
-  // manifest + per-disease payloads
   const [diseases, setDiseases] = useState(null)
   const [activeKey, setActiveKey] = useState(null)
   const [genes, setGenes] = useState(null)
@@ -29,10 +23,10 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // view state — the cross-cohort Consensus score is the default lens
-  const [rankMetric, setRankMetric] = useState('RCS')
+  // Sensor is the primary ranking lens
+  const [rankMetric, setRankMetric] = useState('spec_score')
   const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState('RCS')
+  const [sortKey, setSortKey] = useState('spec_score')
   const [sortDir, setSortDir] = useState('desc')
   const [filters, setFilters] = useState(BASE_FILTERS)
   const [selected, setSelected] = useState(null)
@@ -41,7 +35,6 @@ export default function App() {
 
   const base = import.meta.env.BASE_URL || '/'
 
-  // ---- load the disease manifest + shared cross-cohort once ---------------- //
   useEffect(() => {
     Promise.all([
       fetch(`${base}data/diseases.json`).then((r) => {
@@ -56,7 +49,9 @@ export default function App() {
         const list = manifest?.diseases || []
         setDiseases(list)
         setCrossCohort(xc)
-        if (list.length) setActiveKey(list[0].key)
+        const defaultKey =
+          list.find((d) => d.key === 'keloid_pooled' || d.disease === 'keloid')?.key ?? list[0]?.key
+        if (defaultKey) setActiveKey(defaultKey)
       })
       .catch((e) => setError(e.message))
   }, [])
@@ -66,7 +61,6 @@ export default function App() {
     [diseases, activeKey],
   )
 
-  // ---- load the selected disease's gene records (+ umap if present) --------- //
   useEffect(() => {
     if (!info) return
     let cancelled = false
@@ -82,7 +76,6 @@ export default function App() {
         return r.json()
       }),
     ]
-    // The pooled key has no umap of its own — fetch the disease's umap_key file.
     const umapKey = info.has_umap && info.umap_key ? info.umap_key : null
     jobs.push(
       umapKey
@@ -91,14 +84,11 @@ export default function App() {
             .catch(() => null)
         : Promise.resolve(null),
     )
-    // Full-distribution volcano set (the ranked table is up-regulated by construction,
-    // so it cannot show the down-regulated half on its own).
     jobs.push(
       fetch(`${base}data/${info.key}_volcano.json`)
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     )
-    // Absolute per-cell-type abundance for the profiled trigger genes (optional).
     jobs.push(
       fetch(`${base}data/${info.key}_celltype_expr.json`)
         .then((r) => (r.ok ? r.json() : null))
@@ -112,7 +102,10 @@ export default function App() {
         setUmap(um)
         setVolcano(vol)
         setCtExpr(ct)
-        setSelected(racs.length ? racs[0].gene : null)
+        const topSensor = [...racs].sort(
+          (a, b) => (b.spec_score ?? -Infinity) - (a.spec_score ?? -Infinity),
+        )[0]
+        setSelected(topSensor?.gene ?? (racs.length ? racs[0].gene : null))
         setCompareIds([])
         setLoading(false)
       })
@@ -130,8 +123,6 @@ export default function App() {
   const hasFDR = useMemo(() => hasCol(genes, 'FDR'), [genes])
   const isKeloid = info?.disease === 'keloid'
 
-  // if the active rank metric isn't available for this disease, fall back to the
-  // first metric that is (Consensus normally; RACS for a cohort without it).
   useEffect(() => {
     if (genes && !hasCol(genes, rankMetric)) {
       const fallback = Object.keys(RANK_METRICS).find((k) => hasCol(genes, k))
@@ -139,19 +130,15 @@ export default function App() {
     }
   }, [genes, rankMetric])
 
-  // keep the display sort valid when switching diseases (a metric column may
-  // vanish, e.g. DSS/Repro absent for some cohorts).
   useEffect(() => {
     if (genes && sortKey && !hasCol(genes, sortKey)) setSortKey(rankMetric)
   }, [genes, sortKey, rankMetric])
 
-  // when the rank metric changes, default the display sort to match it
   useEffect(() => {
     setSortKey(rankMetric)
     setSortDir('desc')
   }, [rankMetric])
 
-  // filter bounds for the dynamic sliders (detect_P, log2FC)
   const bounds = useMemo(() => {
     if (!genes) return null
     return {
@@ -160,7 +147,6 @@ export default function App() {
     }
   }, [genes])
 
-  // rank by the active metric (stable, independent of the display sort)
   const ranked = useMemo(() => {
     if (!genes) return []
     const mk = rankMetric
@@ -169,11 +155,14 @@ export default function App() {
     return genes.map((g) => ({ ...g, _rank: rankMap.get(g.gene) }))
   }, [genes, rankMetric])
 
-  // ---- filter + search + sort --------------------------------------------- //
+  const sensorRankMap = useMemo(() => {
+    if (!genes) return new Map()
+    const sorted = [...genes].sort((a, b) => (b.spec_score ?? -Infinity) - (a.spec_score ?? -Infinity))
+    return new Map(sorted.map((g, i) => [g.gene, i + 1]))
+  }, [genes])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    // Component metrics may be absent for some cohorts (e.g. Repro in PF); treat
-    // a missing value as "passes" so the default (0) filters never hide genes.
     const geq = (v, t) => v === undefined || v === null || v >= t
     const leq = (v, t) => v === undefined || v === null || v <= t
     let out = ranked.filter(
@@ -191,7 +180,7 @@ export default function App() {
     out = [...out].sort((a, b) => {
       const av = a[sortKey]
       const bv = b[sortKey]
-      if (av === bv) return a._rank - b._rank
+      if (av === bv) return (a._rank ?? 0) - (b._rank ?? 0)
       if (av === undefined || av === null) return 1
       if (bv === undefined || bv === null) return -1
       return (av < bv ? -1 : 1) * dir
@@ -225,40 +214,36 @@ export default function App() {
     [ranked, compareIds],
   )
 
-  // umap expression columns (genes embedded in the umap json)
   const umapGeneCols = useMemo(() => {
     if (!umap || !umap.length) return []
     return Object.keys(umap[0]).filter((k) => !UMAP_META_KEYS.has(k))
   }, [umap])
 
-  // the cohort whose single-cell data backs the umap (for the panel label)
   const umapCohort = useMemo(
     () => info?.cohorts?.find((c) => c.key === info.umap_key) || null,
     [info],
   )
 
-  // keep selection valid when filters hide the current gene
   useEffect(() => {
     if (selected && !filtered.some((g) => g.gene === selected) && filtered.length) {
       setSelected(filtered[0].gene)
     }
   }, [filtered, selected])
 
-  // ---- handlers ------------------------------------------------------------ //
   const onSort = (key) => {
     if (key === sortKey) {
       setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
     } else {
       setSortKey(key)
-      // OffMax reads best ascending (lower is better); others descending.
       setSortDir(key === 'OffMax' ? 'asc' : 'desc')
+      if (RANK_METRICS[key]) setRankMetric(key)
     }
   }
 
   const toggleCompare = (id) =>
     setCompareIds((ids) => {
       if (ids.includes(id)) return ids.filter((x) => x !== id)
-      if (ids.length >= 4) return ids // cap at 4
+      if (ids.length >= 4) return ids
       return [...ids, id]
     })
 
@@ -269,12 +254,11 @@ export default function App() {
 
   if (error) {
     return (
-      <div className="app">
+      <div className="dashboard-shell">
         <div className="error">
           Failed to load data: {error}
           <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>
-            Ensure <code>public/data/diseases.json</code> and the per-disease files exist, then
-            reload.
+            Ensure <code>public/data/diseases.json</code> and the per-disease files exist, then reload.
           </div>
         </div>
       </div>
@@ -283,60 +267,35 @@ export default function App() {
 
   if (!diseases) {
     return (
-      <div className="app">
-        <div className="loading">Loading disease manifest…</div>
+      <div className="dashboard-shell">
+        <div className="dashboard-loading">Loading disease manifest…</div>
       </div>
     )
   }
 
   return (
-    <div className="app">
-      <Header
-        diseases={diseases}
-        activeKey={activeKey}
-        setActiveKey={setActiveKey}
-        info={info}
-        query={query}
-        setQuery={setQuery}
-        nCandidates={filtered.length}
-        nTotal={ranked.length}
-        loading={loading}
-      />
+    <div className="dashboard-shell">
+      <div className="dashboard-frame">
+      <DiseaseNav diseases={diseases} activeKey={activeKey} setActiveKey={setActiveKey} />
 
-      <ComparisonPanel info={info} />
+      <div className="dashboard-content">
+        <Header
+          info={info}
+          query={query}
+          setQuery={setQuery}
+          nCandidates={filtered.length}
+          nTotal={ranked.length}
+          loading={loading}
+        />
 
-      {/* rank-metric toggle */}
-      <div className="rank-toggle-bar">
-        <div className="rank-toggle">
-          <span className="rt-label">Rank by</span>
-          <div className="seg">
-            {Object.values(RANK_METRICS).map((m) => (
-              <button
-                key={m.key}
-                className={`seg-btn${rankMetric === m.key ? ' active' : ''}`}
-                onClick={() => setRankMetric(m.key)}
-                disabled={!hasCol(genes, m.key)}
-                title={!hasCol(genes, m.key) ? `${m.label} not available for this cohort` : undefined}
-              >
-                {m.label}
-              </button>
-            ))}
+        {loading ? (
+          <div className="dashboard-loading">
+            Loading {info?.disease}
+            {info?.n_cohorts ? ` · ${info.n_cohorts} cohort${info.n_cohorts > 1 ? 's' : ''}` : ''}…
           </div>
-        </div>
-      </div>
-
-      <FormulaPanel rankMetric={rankMetric} />
-
-      {loading ? (
-        <div className="loading">
-          Loading {info?.disease}
-          {info?.n_cohorts ? ` · ${info.n_cohorts} cohort${info.n_cohorts > 1 ? 's' : ''}` : ''}…
-        </div>
-      ) : (
-        <>
-          <div className="main-grid">
-            {/* left column: list + filters */}
-            <div>
+        ) : (
+          <div className="dashboard-workspace">
+            <aside className="workspace-ranks">
               <GeneList
                 genes={filtered}
                 maxMetric={maxMetric}
@@ -357,25 +316,29 @@ export default function App() {
                 defaults={BASE_FILTERS}
                 bounds={bounds}
               />
-              <div className="panel">
-                <div className="panel-body" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <button className="chip" onClick={() => exportCsv(filtered, `${activeKey}_filtered.csv`)}>
-                    Download CSV ({filtered.length})
-                  </button>
-                  <button
-                    className={`chip${compareOpen ? ' active' : ''}`}
-                    onClick={() => setCompareOpen((o) => !o)}
-                  >
-                    {compareOpen ? 'Exit compare mode' : 'Compare mode'}
-                  </button>
-                </div>
+              <div className="sidebar-footer">
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => exportCsv(filtered, `${activeKey}_filtered.csv`)}
+                >
+                  Export CSV ({filtered.length})
+                </button>
+                <button
+                  type="button"
+                  className={`chip${compareOpen ? ' active' : ''}`}
+                  onClick={() => setCompareOpen((o) => !o)}
+                >
+                  {compareOpen ? 'Exit compare' : 'Compare'}
+                </button>
               </div>
-            </div>
+            </aside>
 
-            {/* right column: detail or compare */}
-            <div>
+            <main className="workspace-detail">
+              <ComparisonPanel key={activeKey} info={info} />
+
               {compareOpen ? (
-                <div className="panel">
+                <div className="panel dashboard-panel">
                   <div className="panel-head">
                     <h2>Compare targets</h2>
                     <span className="hint">Up to 4 genes</span>
@@ -389,77 +352,47 @@ export default function App() {
               ) : (
                 <>
                   {selectedGene ? (
-                    <div style={{ marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <div className="main-toolbar">
+                      <span className="main-toolbar-label">Selected target</span>
                       <button
+                        type="button"
                         className="chip"
                         onClick={() => {
                           toggleCompare(selectedGene.gene)
                           setCompareOpen(true)
                         }}
                       >
-                        + Add “{selectedGene.gene}” to compare
+                        Add {selectedGene.gene} to compare
                       </button>
                     </div>
                   ) : null}
                   <DetailPanel
                     gene={selectedGene}
                     allGenes={ranked}
-                    rank={selectedGene?._rank}
+                    rank={selectedGene ? sensorRankMap.get(selectedGene.gene) : null}
+                    totalGenes={ranked.length}
                     cohorts={info?.cohorts || []}
+                    nCohorts={info?.n_cohorts}
+                    ctExpr={ctExpr}
+                    pathogenicHint={info?.cohorts?.[0]?.comparison?.cell_type}
+                    volcano={volcano}
+                    volcanoGenes={genes}
+                    hasFDR={hasFDR}
+                    isFullVolcano={Boolean(volcano && volcano.length)}
+                    onSelectGene={selectGene}
+                    umap={info?.has_umap && umap?.length ? umap : null}
+                    umapGeneCols={umapGeneCols}
+                    umapLabel={`${umapCohort?.cell_type ?? info?.disease} · ${umapCohort?.cohort ?? 'Single-cell atlas'}`}
+                    crossCohort={crossCohort}
+                    showCrossCohort={isKeloid && crossCohort}
                   />
                 </>
               )}
-            </div>
+            </main>
           </div>
-
-          {/* full-width analysis panels */}
-          <div className="panels-stack">
-            {ctExpr ? (
-              <CellTypeExpressionPanel
-                data={ctExpr}
-                gene={selected}
-                pathogenicHint={info?.cohorts?.[0]?.comparison?.cell_type}
-              />
-            ) : null}
-            {hasFDR || hasCol(genes, 'p_value') ? (
-              <div className="panel viz-panel">
-                <div className="panel-head">
-                  <h2>Differential expression</h2>
-                  <span className="hint">Volcano · click a point to select</span>
-                </div>
-                <div className="panel-body">
-                  <VolcanoPanel
-                    genes={volcano && volcano.length ? volcano : genes}
-                    selectedGene={selected}
-                    onSelect={selectGene}
-                    hasFDR={hasFDR}
-                    isFullSet={Boolean(volcano && volcano.length)}
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            {info?.has_umap && info?.umap_key && umap && umap.length ? (
-              <div className="panel viz-panel">
-                <div className="panel-head">
-                  <h2>Cell embedding</h2>
-                  <span className="hint" style={{ textTransform: 'capitalize' }}>
-                    {umapCohort?.cell_type ?? info.disease} · {umapCohort?.cohort ?? 'Single-cell atlas'}
-                  </span>
-                </div>
-                <div className="panel-body">
-                  <UmapPanel points={umap} geneCols={umapGeneCols} selectedGene={selected} />
-                </div>
-              </div>
-            ) : null}
-
-            {isKeloid && crossCohort ? (
-              <CrossCohortPanel rows={crossCohort} onSelect={selectGene} />
-            ) : null}
-          </div>
-        </>
-      )}
-
+        )}
+      </div>
+      </div>
     </div>
   )
 }

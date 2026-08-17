@@ -14,26 +14,28 @@ import {
   LabelList,
 } from 'recharts'
 import ChartCard from './ChartCard'
-import { COLORS, fmt, hasCol } from '../lib/utils'
+import CollapsibleSection from './CollapsibleSection'
+import CellTypeExpressionPanel from './CellTypeExpressionPanel'
+import VolcanoPanel from './VolcanoPanel'
+import UmapPanel from './UmapPanel'
+import CrossCohortPanel from './CrossCohortPanel'
+import FormulaPanel from './FormulaPanel'
+import { interpretSensor } from '../lib/sensorInterpret'
+import { COLORS, fmt, RANK_METRICS } from '../lib/utils'
 
-// Off-target populations that may appear alongside the pathogenic act_P.
 const OFF_POPS = [
-  { key: 'act_H', label: 'Healthy' },
-  { key: 'act_B', label: 'Background' },
-  { key: 'act_R', label: 'Related' },
+  { key: 'act_H', detectKey: 'detect_H', label: 'Healthy' },
+  { key: 'act_B', detectKey: 'detect_B', label: 'Bystander' },
+  { key: 'act_R', detectKey: 'detect_R', label: 'Related disease' },
 ]
 
-// ---- custom tooltips (editorial, no recharts default chrome) -------------- //
 function BreakdownTooltip({ active, payload }) {
   if (!active || !payload?.length) return null
   const p = payload[0].payload
   return (
     <div className="rc-tooltip">
       <div className="tt-title">{p.name}</div>
-      <div className="tt-row">
-        <span className="tt-k">value</span>
-        <span>{fmt(p.value, 3)}</span>
-      </div>
+      <div className="tt-row"><span className="tt-k">value</span><span>{fmt(p.value, 3)}</span></div>
     </div>
   )
 }
@@ -45,9 +47,7 @@ function ActTooltip({ active, payload, label }) {
       <div className="tt-title">{label}</div>
       {payload.map((s) => (
         <div className="tt-row" key={s.dataKey}>
-          <span className="tt-k" style={{ color: s.color }}>
-            {s.name}
-          </span>
+          <span className="tt-k" style={{ color: s.color }}>{s.name}</span>
           <span>{fmt(s.value, 3)}</span>
         </div>
       ))}
@@ -61,39 +61,76 @@ function ScatterTooltip({ active, payload }) {
   return (
     <div className="rc-tooltip">
       <div className="tt-title">{p.gene}</div>
-      <div className="tt-row">
-        <span className="tt-k">Δ detection</span>
-        <span>{fmt(p.dx, 1)} pts</span>
-      </div>
-      <div className="tt-row">
-        <span className="tt-k">log2 fold-change</span>
-        <span>{fmt(p.fc, 2)}</span>
-      </div>
-      <div className="tt-row">
-        <span className="tt-k">Sensor score</span>
-        <span>{fmt(p.sensor, 3)}</span>
-      </div>
+      <div className="tt-row"><span className="tt-k">Δ detection</span><span>{fmt(p.dx, 1)} pts</span></div>
+      <div className="tt-row"><span className="tt-k">log2FC</span><span>{fmt(p.fc, 2)}</span></div>
+      <div className="tt-row"><span className="tt-k">Sensor</span><span>{fmt(p.sensor, 3)}</span></div>
     </div>
   )
 }
 
-const Swatch = ({ color }) => <span className="swatch" style={{ background: color }} />
+function BioQuestion({ title, children }) {
+  return (
+    <div className="bio-question">
+      <h4>{title}</h4>
+      <div className="bio-question-body">{children}</div>
+    </div>
+  )
+}
 
-export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
+function MetricPill({ label, value, tone = 'neutral' }) {
+  return (
+    <div className={`metric-pill tone-${tone}`}>
+      <span className="metric-pill-label">{label}</span>
+      <span className="metric-pill-value">{value}</span>
+    </div>
+  )
+}
+
+export default function DetailPanel({
+  gene,
+  allGenes,
+  rank,
+  totalGenes,
+  cohorts = [],
+  nCohorts,
+  ctExpr,
+  pathogenicHint,
+  volcano,
+  volcanoGenes,
+  hasFDR,
+  isFullVolcano,
+  onSelectGene,
+  umap,
+  umapGeneCols,
+  umapLabel,
+  crossCohort,
+  showCrossCohort,
+}) {
   if (!gene) {
     return (
-      <div className="detail-empty">
-        <p style={{ margin: 0, fontSize: 15 }}>Select a gene to inspect its target profile.</p>
-        <p className="muted" style={{ marginTop: 8, fontSize: 13 }}>
-          Cross-cohort reproducibility, RACS breakdown, therapeutic-window activation, and where
-          the gene sits in detection-difference vs fold-change space.
-        </p>
+      <div className="detail-empty dashboard-panel">
+        <p style={{ margin: 0, fontSize: 15 }}>Select a target from the list.</p>
       </div>
     )
   }
 
-  // (a) RACS breakdown: the multiplicative factors present for this disease,
-  // RACS highlighted. Repro is absent for some cohorts — omit it there.
+  const { strengths, weaknesses } = interpretSensor(gene, { nCohorts, totalGenes })
+  const sensorScore = gene.spec_score
+  const fold = Number.isFinite(gene.log2FC) ? Math.pow(2, gene.log2FC) : null
+
+  const offPops = OFF_POPS.filter((o) => gene[o.key] !== undefined && gene[o.key] !== null)
+  const offValues = offPops.map((o) => gene[o.key]).filter((v) => typeof v === 'number')
+  const worstOff = offValues.length ? Math.max(...offValues) : null
+  const worstOffPop = offValues.length
+    ? offPops[offPops.findIndex((o) => gene[o.key] === worstOff)]?.label
+    : '—'
+
+  const windowRows = [
+    { label: 'Pathogenic', value: gene.act_P, detect: gene.detect_P, tone: 'pathogenic' },
+    { label: 'Healthy', value: gene.act_H, detect: gene.detect_H, tone: 'healthy' },
+    { label: `Worst off-target (${worstOffPop})`, value: worstOff, detect: null, tone: 'offtarget' },
+  ].filter((r) => r.value != null || r.detect != null)
+
   const breakdown = [
     { name: 'Sep', value: gene.Sep, kind: 'comp' },
     { name: 'Feas', value: gene.Feas, kind: 'comp' },
@@ -102,7 +139,6 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
     { name: 'RACS', value: gene.RACS, kind: 'racs' },
   ].filter((b) => b.value !== undefined && b.value !== null)
 
-  // per-cohort reproducibility: percentile rank of this gene in each pooled cohort
   const perCohort = gene.per_cohort && typeof gene.per_cohort === 'object' ? gene.per_cohort : null
   const cohortLabel = (key) => cohorts.find((c) => c.key === key)?.cohort || key
   const reproRows = perCohort
@@ -111,26 +147,6 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
         .sort((a, b) => b.pct - a.pct)
     : []
 
-  // (b) per-population activation (therapeutic window). Only the off-target
-  // populations actually present in this disease are shown.
-  const offPops = OFF_POPS.filter((o) => gene[o.key] !== undefined && gene[o.key] !== null)
-  const activation = [
-    { pop: 'Pathogenic', P: gene.act_P, off: null },
-    ...offPops.map((o) => ({ pop: o.label, P: null, off: gene[o.key] })),
-  ]
-  const offValues = offPops.map((o) => gene[o.key]).filter((v) => typeof v === 'number')
-  const worstOff = offValues.length ? Math.max(...offValues) : null
-  const worstOffPop =
-    offValues.length
-      ? offPops[offPops.findIndex((o) => gene[o.key] === worstOff)]?.label
-      : '—'
-
-  // (c) abundance-vs-specificity scatter for ALL genes.
-  // Plot the calibration-independent axes the Consensus ranking actually uses:
-  // x = change in the FRACTION of cells expressing, y = fold-change in level.
-  // Their product is the Sensor score, so the top-right corner is genuinely the
-  // top of the ranking — unlike the old Feas/Sep view, whose "sweet spot" sat
-  // beyond the reachable range of the uncalibrated Hill curve.
   const scatterData = allGenes
     .filter((g) => g.delta_detect !== undefined && g.log2FC !== undefined)
     .map((g) => ({
@@ -141,7 +157,6 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
       z: Math.max(30, (g.spec_score ?? 0) * 260 + 30),
       selected: g.gene === gene.gene,
     }))
-  // Data-driven, not hardcoded: the top quartile on both axes for THIS disease.
   const q = (arr, p) => {
     const a = [...arr].sort((x, y) => x - y)
     return a.length ? a[Math.floor((a.length - 1) * p)] : 0
@@ -153,361 +168,317 @@ export default function DetailPanel({ gene, allGenes, rank, cohorts = [] }) {
   const others = scatterData.filter((d) => !d.selected)
   const selPoint = scatterData.filter((d) => d.selected)
 
-  // (d) off-target view: on-target vs worst-case off-target.
-  const offTarget = [
-    {
-      name: gene.gene,
-      onTarget: gene.act_P,
-      offTarget: worstOff,
-    },
-  ]
-
-  // (e) extended metric table — expose the fuller metric set, skipping any
-  // columns this disease doesn't carry.
   const metricRows = [
-    { k: 'tpm_P', label: 'Abundance in pathogenic cells (TPM)', v: gene.tpm_P, d: 0 },
-    { k: 'tpm_H', label: 'Abundance in healthy cells (TPM)', v: gene.tpm_H, d: 0 },
-    { k: 'tpm_B', label: 'Abundance in bystander cell types (TPM)', v: gene.tpm_B, d: 0 },
-    { k: 'RCS', label: 'Consensus score (percentile)', v: gene.RCS, d: 1 },
-    { k: 'p_top10', label: 'P(gene is a true top-10 target)', v: gene.p_top10, d: 2 },
-    { k: 'signal_agreement', label: 'Metric agreement (0–1)', v: gene.signal_agreement, d: 2 },
-    { k: 'spec_score', label: 'Sensor (detection specificity)', v: gene.spec_score, d: 2 },
-    { k: 'DSS', label: 'DSS (disease specificity)', v: gene.DSS, d: 2 },
+    { k: 'spec_score', label: 'Sensor score', v: gene.spec_score, d: 3 },
+    { k: 'RCS', label: 'Consensus (percentile)', v: gene.RCS, d: 1 },
+    { k: 'RACS', label: 'RACS', v: gene.RACS, d: 3 },
+    { k: 'DSS', label: 'DSS', v: gene.DSS, d: 2 },
+    { k: 'Sep', label: 'Separability (AUC)', v: gene.Sep, d: 3 },
+    { k: 'Feas', label: 'Feasibility', v: gene.Feas, d: 3 },
+    { k: 'Repro', label: 'Reproducibility', v: gene.Repro, d: 3 },
+    { k: 'OffMax', label: 'OffMax', v: gene.OffMax, d: 3 },
+    { k: 'tpm_P', label: 'TPM · pathogenic', v: gene.tpm_P, d: 0 },
+    { k: 'tpm_H', label: 'TPM · healthy', v: gene.tpm_H, d: 0 },
+    { k: 'tpm_B', label: 'TPM · bystander', v: gene.tpm_B, d: 0 },
     { k: 'log2FC', label: 'Log2 fold-change', v: gene.log2FC, d: 2 },
-    { k: 'detect_P', label: 'Detection in pathogenic (%)', v: gene.detect_P, d: 1 },
-    { k: 'detect_H', label: 'Detection in healthy (%)', v: gene.detect_H, d: 1 },
-    { k: 'delta_detect', label: 'Δ detection (P − H, %)', v: gene.delta_detect, d: 1 },
-    { k: 'mean_P', label: 'Mean expr (pathogenic)', v: gene.mean_P, d: 2 },
-    { k: 'dynrange', label: 'Dynamic range', v: gene.dynrange, d: 2 },
-    { k: 'cv_P', label: 'CV (pathogenic)', v: gene.cv_P, d: 2 },
-    { k: 'FDR', label: 'FDR', v: gene.FDR, d: 4 },
+    { k: 'detect_P', label: 'Detection · pathogenic (%)', v: gene.detect_P, d: 1 },
+    { k: 'detect_H', label: 'Detection · healthy (%)', v: gene.detect_H, d: 1 },
+    { k: 'delta_detect', label: 'Δ detection (P − ref, %)', v: gene.delta_detect, d: 1 },
+    { k: 'mean_P', label: 'Mean expr · pathogenic', v: gene.mean_P, d: 2 },
     { k: 'celltype_spec', label: 'Cell-type specificity', v: gene.celltype_spec, d: 2 },
     { k: 'disease_spec', label: 'Disease specificity', v: gene.disease_spec, d: 2 },
+    { k: 'p_value', label: 'p-value', v: gene.p_value, d: 4 },
+    { k: 'FDR', label: 'FDR', v: gene.FDR, d: 4 },
+    { k: 'p_top10', label: 'P(top 10)', v: gene.p_top10, d: 2 },
+    { k: 'signal_agreement', label: 'Metric agreement', v: gene.signal_agreement, d: 2 },
+    { k: 'k_op', label: 'Operating threshold k_op', v: gene.k_op, d: 1 },
+    { k: 'Youden_J', label: 'Youden J', v: gene.Youden_J, d: 3 },
   ].filter((r) => r.v !== undefined && r.v !== null)
 
+  const nc = gene.n_cohorts_present ?? gene.n_cohorts
+  const confClass =
+    gene.confidence === 'High'
+      ? 'high'
+      : gene.confidence === 'Medium'
+        ? 'medium'
+        : 'low'
+
   return (
-    <div>
-      <div className="detail-header">
-        <div className="detail-title">
-          <h2>{gene.gene}</h2>
-          <div className="detail-racs">
-            <span className="num">
-              {gene.RCS != null ? fmt(gene.RCS, 1) : fmt(gene.RACS, 3)}
-            </span>
-            <span className="cap">{gene.RCS != null ? 'Consensus' : 'RACS'}</span>
+    <div className="detail-sensor-first dashboard-detail">
+      {/* ── PRIMARY: Sensor assessment ── */}
+      <section className="sensor-hero sensor-hero-compact dash-card">
+        <div className="sensor-hero-main">
+          <div className="sensor-hero-title">
+            <h2 className="sensor-gene-name">{gene.gene}</h2>
+            {gene.confidence ? (
+              <span className={`confidence-badge ${confClass}`}>{gene.confidence} confidence</span>
+            ) : null}
           </div>
-          <span className="rank-badge">Rank #{rank}</span>
-          {gene.confidence ? (
-            <span
-              className="rank-badge"
-              title="Confidence tier from cross-cohort stability, agreement across metrics, and biological plausibility"
-              style={{
-                background:
-                  gene.confidence === 'High'
-                    ? '#1c7170'
-                    : gene.confidence === 'Medium'
-                      ? '#c98a2b'
-                      : '#a3a3a3',
-                color: '#fff',
-              }}
-            >
-              {gene.confidence} confidence
+          <div className="sensor-hero-score-inline">
+            <span className="sensor-score-value">{fmt(sensorScore, 3)}</span>
+            <span className="sensor-score-meta">
+              Sensor · rank #{rank ?? '—'} / {totalGenes ?? '—'}
             </span>
-          ) : null}
+          </div>
         </div>
-        <div className="kv-strip">
-          {gene.tpm_P != null ? (
-            <div className="kv">
-              <span className="k">TPM · pathogenic</span>
-              <span className="v" style={{ color: COLORS.crimson }}>
-                {Math.round(gene.tpm_P).toLocaleString()}
-              </span>
-            </div>
-          ) : null}
-          {gene.tpm_H != null ? (
-            <div className="kv">
-              <span className="k">TPM · healthy</span>
-              <span className="v">{Math.round(gene.tpm_H).toLocaleString()}</span>
-            </div>
-          ) : null}
-          {gene.p_top10 != null ? (
-            <div className="kv">
-              <span className="k">P(top 10)</span>
-              <span className="v">{fmt(gene.p_top10, 2)}</span>
-            </div>
-          ) : null}
-          {gene.RACS != null ? (
-            <div className="kv">
-              <span className="k">RACS</span>
-              <span className="v" style={{ color: COLORS.crimson }}>{fmt(gene.RACS, 3)}</span>
-            </div>
-          ) : null}
-          {gene.DSS != null ? (
-            <div className="kv">
-              <span className="k">DSS</span>
-              <span className="v" style={{ color: COLORS.teal }}>{fmt(gene.DSS, 2)}</span>
-            </div>
-          ) : null}
-          {gene.n_cohorts != null ? (
-            <div className="kv">
-              <span className="k">Cohorts</span>
-              <span className="v">{gene.n_cohorts}</span>
-            </div>
-          ) : null}
+
+        <div className="sensor-header-metrics sensor-header-metrics-compact">
+          <MetricPill label="Pathogenic detection" value={`${fmt(gene.detect_P, 1)}%`} tone="pathogenic" />
+          <MetricPill label="Healthy detection" value={`${fmt(gene.detect_H ?? gene.detect_B, 1)}%`} tone="healthy" />
+          <MetricPill
+            label="Δ detection"
+            value={Number.isFinite(gene.delta_detect) ? `+${fmt(gene.delta_detect, 1)}%` : '—'}
+            tone={gene.delta_detect > 15 ? 'good' : 'neutral'}
+          />
+          <MetricPill
+            label="Disease enrichment"
+            value={fold ? `${fmt(fold, 1)}×` : '—'}
+            tone={gene.log2FC > 0.5 ? 'good' : 'neutral'}
+          />
+          <MetricPill
+            label="Cohorts"
+            value={nc && nCohorts ? `${nc}/${nCohorts}` : nc ? `${nc}` : '—'}
+            tone={nc >= (nCohorts || 2) ? 'good' : 'neutral'}
+          />
         </div>
-      </div>
+      </section>
+
+      <CollapsibleSection title="Summary" defaultOpen={true}>
+        {strengths.length ? (
+          <ul className="why-list why-strengths why-list-compact">
+            {strengths.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
+        ) : null}
+        {weaknesses.length ? (
+          <>
+            <h4 className="why-subheading">Caveats</h4>
+            <ul className="why-list why-weaknesses why-list-compact">
+              {weaknesses.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </CollapsibleSection>
+
+      {scatterData.length ? (
+        <section className="detail-sensor-space dash-card">
+          <ChartCard
+            title="Sensor optimization space"
+            sub="Δ detection vs log2FC · size ∝ Sensor score"
+            filename={`${gene.gene}_sensor_space`}
+            full
+            note="Top quartile on both axes = strongest sensor candidates."
+          >
+            <ResponsiveContainer width="100%" height={320}>
+              <ScatterChart margin={{ top: 16, right: 24, bottom: 32, left: 8 }}>
+                <CartesianGrid stroke={COLORS.border} />
+                <ReferenceArea x1={dxQ} x2={dxMax} y1={fcQ} y2={fcMax} fill={COLORS.tealFaint} fillOpacity={0.35} stroke={COLORS.tealSoft} strokeDasharray="3 3" />
+                <XAxis type="number" dataKey="dx" domain={[0, Math.ceil(dxMax)]} tick={{ fontSize: 11 }} stroke={COLORS.border}
+                  label={{ value: 'Δ detection (% pts vs reference →)', position: 'insideBottom', offset: -14, fontSize: 11, fill: COLORS.muted }} />
+                <YAxis type="number" dataKey="fc" domain={[0, Math.ceil(fcMax)]} tick={{ fontSize: 11 }} stroke={COLORS.border}
+                  label={{ value: 'log2 fold-change (→)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 11, fill: COLORS.muted }} />
+                <ZAxis type="number" dataKey="z" range={[30, 340]} />
+                <Tooltip content={<ScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+                <Scatter data={others} fill={COLORS.tealSoft} fillOpacity={0.55} isAnimationActive={false} />
+                <Scatter data={selPoint} fill={COLORS.crimson} isAnimationActive={false}>
+                  <LabelList dataKey="gene" position="top" style={{ fontSize: 12, fontStyle: 'italic', fill: COLORS.crimson, fontWeight: 600 }} />
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        </section>
+      ) : null}
+
+      <CollapsibleSection title="Sensor checklist" hint="Activation · specificity · reproducibility" defaultOpen={false}>
+      <section className="bio-questions-grid bio-questions-compact">
+        <BioQuestion title="Will the sensor activate in target cells?">
+          <p>
+            {fmt(gene.detect_P, 1)}% of pathogenic cells express this transcript
+            {gene.Feas != null ? ` · predicted activation ${fmt(gene.Feas, 2)} at k_op=${fmt(gene.k_op, 1)}` : ''}.
+          </p>
+        </BioQuestion>
+        <BioQuestion title="Will it stay quiet in healthy cells?">
+          <p>
+            {gene.detect_H != null
+              ? `${fmt(gene.detect_H, 1)}% detection in healthy reference`
+              : gene.detect_B != null
+                ? `${fmt(gene.detect_B, 1)}% detection in reference`
+                : 'No healthy reference available'}
+            {gene.act_H != null ? ` · activation ${fmt(gene.act_H, 2)}` : ''}.
+          </p>
+        </BioQuestion>
+        <BioQuestion title="Could it fire in unintended cell types?">
+          <p>
+            Worst off-target: {worstOffPop} (activation {fmt(worstOff, 2)}
+            {gene.detect_B != null ? `, ${fmt(gene.detect_B, 1)}% bystander detection` : ''}).
+          </p>
+        </BioQuestion>
+        <BioQuestion title="Is the signal reproducible?">
+          <p>
+            {nc && nCohorts
+              ? `Present in ${nc} of ${nCohorts} cohorts`
+              : reproRows.length
+                ? `${reproRows.length} cohort records`
+                : 'Single-cohort evidence'}
+            {gene.Repro != null ? ` · donor reproducibility ${fmt(gene.Repro, 2)}` : ''}.
+          </p>
+        </BioQuestion>
+      </section>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Activation window" hint="Pathogenic vs healthy · off-target" defaultOpen={false}>
+        <div className="window-bars">
+          {windowRows.map((row) => (
+            <div className="window-row" key={row.label}>
+              <span className="window-label">{row.label}</span>
+              <div className="window-track">
+                <span
+                  className={`window-fill tone-${row.tone}`}
+                  style={{ width: `${Math.min(100, Math.max(0, (row.value ?? 0) * 100))}%` }}
+                />
+              </div>
+              <span className="window-value">{fmt(row.value, 2)}</span>
+              {row.detect != null ? (
+                <span className="window-detect muted">{fmt(row.detect, 0)}% det</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
+
+      {/* ── SECONDARY: collapsible sections ── */}
+      <CollapsibleSection title="RADAR compatibility" hint="RACS decomposition · off-target check" defaultOpen={false}>
+        <div className="charts-grid">
+          <ChartCard
+            title="RACS breakdown"
+            sub="Sep × Feas × Repro × (1 − OffMax)"
+            filename={`${gene.gene}_racs_breakdown`}
+            note="Multiplicative factors — any single failure reduces RACS."
+          >
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={breakdown} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 8 }} barCategoryGap={8}>
+                <CartesianGrid horizontal={false} stroke={COLORS.border} />
+                <XAxis type="number" domain={[0, 1]} tick={{ fontSize: 11 }} stroke={COLORS.border} />
+                <YAxis type="category" dataKey="name" width={78} tick={{ fontSize: 12 }} stroke={COLORS.border} />
+                <Tooltip content={<BreakdownTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
+                <Bar dataKey="value" radius={[0, 2, 2, 0]} isAnimationActive={false}>
+                  {breakdown.map((d) => (
+                    <Cell key={d.name} fill={d.kind === 'racs' ? COLORS.crimson : COLORS.teal} />
+                  ))}
+                  <LabelList dataKey="value" position="right" formatter={(v) => fmt(v, 2)} style={{ fontSize: 11, fill: COLORS.muted }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard
+            title="Off-target check"
+            sub={`on-target vs worst (${worstOffPop})`}
+            filename={`${gene.gene}_off_target`}
+          >
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart
+                data={[{ name: gene.gene, onTarget: gene.act_P, offTarget: worstOff }]}
+                margin={{ top: 8, right: 12, bottom: 4, left: -12 }}
+              >
+                <CartesianGrid vertical={false} stroke={COLORS.border} />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fontStyle: 'italic' }} stroke={COLORS.border} />
+                <YAxis domain={[0, 1]} tick={{ fontSize: 11 }} stroke={COLORS.border} />
+                <Tooltip content={<ActTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
+                <Bar dataKey="onTarget" name="On-target" fill={COLORS.crimson} radius={[2, 2, 0, 0]} isAnimationActive={false} maxBarSize={64} />
+                <Bar dataKey="offTarget" name="Worst off-target" fill={COLORS.teal} radius={[2, 2, 0, 0]} isAnimationActive={false} maxBarSize={64} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        </div>
+
+        <div className="secondary-metrics-strip">
+          {gene.RACS != null ? <MetricPill label="RACS" value={fmt(gene.RACS, 3)} /> : null}
+          {gene.DSS != null ? <MetricPill label="DSS" value={fmt(gene.DSS, 2)} /> : null}
+          {gene.RCS != null ? <MetricPill label="Consensus" value={fmt(gene.RCS, 1)} /> : null}
+          {gene.Sep != null ? <MetricPill label="Sep" value={fmt(gene.Sep, 3)} /> : null}
+        </div>
+      </CollapsibleSection>
 
       {reproRows.length ? (
-        <div className="chart-card full repro-card" style={{ marginTop: 20 }}>
-          <div className="chart-head">
-            <h3>
-              Reproducibility across cohorts
-              <span className="sub">  percentile rank of {gene.gene} in each pooled cohort</span>
-            </h3>
-          </div>
+        <CollapsibleSection title="Across-cohort evidence" hint={`${reproRows.length} cohorts`} defaultOpen={false}>
           <div className="repro-body">
             {reproRows.map((r) => (
               <div className="repro-row" key={r.key}>
                 <span className="repro-label" title={r.label}>{r.label}</span>
                 <span className="repro-track">
-                  <span
-                    className="repro-fill"
-                    style={{ width: `${Math.max(1, r.pct)}%` }}
-                  />
+                  <span className="repro-fill" style={{ width: `${Math.max(1, r.pct)}%` }} />
                 </span>
                 <span className="repro-val">{fmt(r.pct, 1)}</span>
               </div>
             ))}
           </div>
-          <div className="chart-note">
-            High bars in every cohort mean the target is a robust consensus hit, not a
-            single-dataset artefact. Percentiles are the gene's expression rank within each cohort.
-          </div>
-        </div>
+        </CollapsibleSection>
       ) : null}
 
-      <div className="charts-grid">
-        {/* (a) RACS breakdown */}
-        <ChartCard
-          title="RACS breakdown"
-          sub="Multiplicative factors"
-          filename={`${gene.gene}_racs_breakdown`}
-          note="RACS = Sep · Feas · Repro · (1 − OffMax). Teal = components; crimson = composite."
-        >
-          <ResponsiveContainer width="100%" height={210}>
-            <BarChart
-              data={breakdown}
-              layout="vertical"
-              margin={{ top: 4, right: 44, bottom: 4, left: 8 }}
-              barCategoryGap={8}
-            >
-              <CartesianGrid horizontal={false} stroke={COLORS.border} />
-              <XAxis type="number" domain={[0, 1]} tick={{ fontSize: 11 }} stroke={COLORS.border} />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={78}
-                tick={{ fontSize: 12 }}
-                stroke={COLORS.border}
-              />
-              <Tooltip content={<BreakdownTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-              <Bar dataKey="value" radius={[0, 2, 2, 0]} isAnimationActive={false}>
-                {breakdown.map((d) => (
-                  <Cell key={d.name} fill={d.kind === 'racs' ? COLORS.crimson : COLORS.teal} />
-                ))}
-                <LabelList
-                  dataKey="value"
-                  position="right"
-                  formatter={(v) => fmt(v, 2)}
-                  style={{ fontSize: 11, fill: COLORS.muted }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        {/* (b) per-population activation */}
-        <ChartCard
-          title="Per-population activation"
-          sub={`therapeutic window · k_op = ${fmt(gene.k_op, 1)}`}
-          filename={`${gene.gene}_activation_window`}
-          legend={
-            <>
-              <span className="lk">
-                <Swatch color={COLORS.crimson} /> Pathogenic (on-target)
-              </span>
-              <span className="lk">
-                <Swatch color={COLORS.teal} /> Off-target (healthy / related)
-              </span>
-            </>
-          }
-          note="A wide gap (crimson high, teal low) is the therapeutic window RADAR exploits."
-        >
-          <ResponsiveContainer width="100%" height={210}>
-            <BarChart data={activation} margin={{ top: 8, right: 12, bottom: 4, left: -12 }}>
-              <CartesianGrid vertical={false} stroke={COLORS.border} />
-              <XAxis dataKey="pop" tick={{ fontSize: 12 }} stroke={COLORS.border} />
-              <YAxis domain={[0, 1]} tick={{ fontSize: 11 }} stroke={COLORS.border} />
-              <Tooltip content={<ActTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-              <Bar
-                dataKey="P"
-                name="On-target"
-                fill={COLORS.crimson}
-                radius={[2, 2, 0, 0]}
-                isAnimationActive={false}
-                maxBarSize={64}
-              />
-              <Bar
-                dataKey="off"
-                name="Off-target"
-                fill={COLORS.teal}
-                radius={[2, 2, 0, 0]}
-                isAnimationActive={false}
-                maxBarSize={64}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        {/* (c) abundance-vs-specificity scatter (full width) */}
-        <ChartCard
-          title="What the ranking actually optimises"
-          sub="Detection difference vs fold-change · point size ∝ Sensor score"
-          filename={`${gene.gene}_sensor_space`}
-          full
-          note="Both axes are calibration-independent, and their product IS the Sensor score — so the shaded corner (top quartile on both) contains the top-ranked targets. The selected gene is crimson."
-        >
-          <ResponsiveContainer width="100%" height={340}>
-            <ScatterChart margin={{ top: 16, right: 24, bottom: 32, left: 8 }}>
-              <CartesianGrid stroke={COLORS.border} />
-              {/* sweet-spot annotation */}
-              <ReferenceArea
-                x1={dxQ}
-                x2={dxMax}
-                y1={fcQ}
-                y2={fcMax}
-                fill={COLORS.tealFaint}
-                fillOpacity={0.35}
-                stroke={COLORS.tealSoft}
-                strokeDasharray="3 3"
-                label={{
-                  value: 'Top quartile on both axes',
-                  position: 'insideTopRight',
-                  fontSize: 11,
-                  fill: COLORS.teal,
-                }}
-              />
-              <XAxis
-                type="number"
-                dataKey="dx"
-                name="Δdetection"
-                domain={[0, Math.ceil(dxMax)]}
-                tick={{ fontSize: 11 }}
-                stroke={COLORS.border}
-                label={{
-                  value: 'Δ detection  (% more cells expressing, vs healthy →)',
-                  position: 'insideBottom',
-                  offset: -14,
-                  fontSize: 11,
-                  fill: COLORS.muted,
-                }}
-              />
-              <YAxis
-                type="number"
-                dataKey="fc"
-                name="log2FC"
-                domain={[0, Math.ceil(fcMax)]}
-                tick={{ fontSize: 11 }}
-                stroke={COLORS.border}
-                label={{
-                  value: 'log2 fold-change  (level →)',
-                  angle: -90,
-                  position: 'insideLeft',
-                  offset: 16,
-                  fontSize: 11,
-                  fill: COLORS.muted,
-                }}
-              />
-              <ZAxis type="number" dataKey="z" range={[30, 340]} />
-              <Tooltip content={<ScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-              <Scatter data={others} fill={COLORS.tealSoft} fillOpacity={0.55} isAnimationActive={false} />
-              <Scatter data={selPoint} fill={COLORS.crimson} isAnimationActive={false}>
-                <LabelList
-                  dataKey="gene"
-                  position="top"
-                  style={{ fontSize: 12, fontStyle: 'italic', fill: COLORS.crimson, fontWeight: 600 }}
-                />
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        {/* (d) off-target view */}
-        <ChartCard
-          title="Off-target check"
-          sub={`on-target vs worst off-target — worst is ${worstOffPop}`}
-          filename={`${gene.gene}_off_target`}
-          legend={
-            <>
-              <span className="lk">
-                <Swatch color={COLORS.crimson} /> On-target act_P
-              </span>
-              <span className="lk">
-                <Swatch color={COLORS.teal} /> Worst off-target
-              </span>
-            </>
-          }
-          note="Compact leakage view: the taller the crimson over teal, the cleaner the target."
-        >
-          <ResponsiveContainer width="100%" height={210}>
-            <BarChart data={offTarget} margin={{ top: 8, right: 12, bottom: 4, left: -12 }}>
-              <CartesianGrid vertical={false} stroke={COLORS.border} />
-              <XAxis dataKey="name" tick={{ fontSize: 12, fontStyle: 'italic' }} stroke={COLORS.border} />
-              <YAxis domain={[0, 1]} tick={{ fontSize: 11 }} stroke={COLORS.border} />
-              <Tooltip content={<ActTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-              <Bar
-                dataKey="onTarget"
-                name="On-target"
-                fill={COLORS.crimson}
-                radius={[2, 2, 0, 0]}
-                isAnimationActive={false}
-                maxBarSize={70}
-              />
-              <Bar
-                dataKey="offTarget"
-                name="Worst off-target"
-                fill={COLORS.teal}
-                radius={[2, 2, 0, 0]}
-                isAnimationActive={false}
-                maxBarSize={70}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
-
-      {metricRows.length ? (
-        <div className="chart-card full" style={{ marginTop: 24 }}>
-          <div className="chart-head">
-            <h3>
-              Full metric set
-              <span className="sub">  abundance · specificity · significance</span>
-            </h3>
-          </div>
-          <div className="compare-table-wrap" style={{ padding: '4px 14px 14px' }}>
-            <table className="compare-table metric-table">
-              <tbody>
-                {metricRows.map((r) => (
-                  <tr key={r.k}>
-                    <td>{r.label}</td>
-                    <td className={r.k === 'DSS' ? 'racs' : undefined}>{fmt(r.v, r.d)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {ctExpr ? (
+        <CollapsibleSection title="Expression & specificity" hint="Per cell type · absolute abundance" defaultOpen={false}>
+          <CellTypeExpressionPanel data={ctExpr} gene={gene.gene} pathogenicHint={pathogenicHint} embedded />
+        </CollapsibleSection>
       ) : null}
+
+      <CollapsibleSection title="Advanced analysis" hint="Volcano · cell embedding · full metrics · formulas" defaultOpen={false} level="advanced">
+        {(hasFDR || volcanoGenes?.some((g) => g.p_value != null)) ? (
+          <section className="detail-volcano detail-volcano-advanced">
+            <VolcanoPanel
+              genes={volcano && volcano.length ? volcano : volcanoGenes}
+              selectedGene={gene.gene}
+              onSelect={onSelectGene}
+              hasFDR={hasFDR}
+              isFullSet={isFullVolcano}
+            />
+          </section>
+        ) : null}
+
+        {umap && umap.length ? (
+          <div style={{ marginTop: 24 }}>
+            <h4 className="section-heading" style={{ marginBottom: 4 }}>Cell embedding</h4>
+            <p className="muted" style={{ fontSize: 12, margin: '0 0 12px' }}>{umapLabel}</p>
+            <UmapPanel points={umap} geneCols={umapGeneCols} selectedGene={gene.gene} />
+          </div>
+        ) : null}
+
+        {showCrossCohort && crossCohort ? (
+          <div style={{ marginTop: 24 }}>
+            <CrossCohortPanel rows={crossCohort} onSelect={onSelectGene} />
+          </div>
+        ) : null}
+
+        {metricRows.length ? (
+          <div style={{ marginTop: 24 }}>
+            <h4 className="section-heading" style={{ marginBottom: 12 }}>Full metric table</h4>
+            <div className="compare-table-wrap">
+              <table className="compare-table metric-table">
+                <tbody>
+                  {metricRows.map((r) => (
+                    <tr key={r.k}>
+                      <td>{r.label}</td>
+                      <td>{fmt(r.v, r.d)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 28 }}>
+          <h4 className="section-heading" style={{ marginBottom: 12 }}>Ranking formulas</h4>
+          {Object.keys(RANK_METRICS).map((k) => (
+            <div key={k} style={{ marginBottom: 16 }}>
+              <FormulaPanel rankMetric={k} compact />
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
     </div>
   )
 }

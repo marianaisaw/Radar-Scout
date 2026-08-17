@@ -1,90 +1,121 @@
-import { COLORS } from '../lib/utils'
+import { useEffect, useMemo, useState } from 'react'
+import { donorRangeFromCohorts } from '../lib/utils'
 
-// States, in plain words, EXACTLY which two groups every metric contrasts.
-// Without this the fold-change is ambiguous ("fibroblast vs what?"), so it sits
-// directly under the header rather than buried in a tooltip.
+/** Compact comparison banner — expandable cohort details, scoped to the active disease. */
 export default function ComparisonPanel({ info }) {
+  const [open, setOpen] = useState(false)
   const cohorts = info?.cohorts || []
-  const comps = cohorts.map((c) => c.comparison).filter(Boolean)
+  const disease = info?.disease || 'this disease'
+
+  // Reset expanded state when the user switches disease tabs.
+  useEffect(() => {
+    setOpen(false)
+  }, [info?.key])
+
+  const comps = useMemo(
+    () => cohorts.map((c) => c.comparison).filter(Boolean),
+    [cohorts],
+  )
+
   if (!comps.length) return null
 
-  const ct = comps[0].cell_type || 'fibroblast'
+  const cellTypes = [...new Set(cohorts.map((c) => c.cell_type).filter(Boolean))]
+  const ctSummary =
+    cellTypes.length === 0
+      ? 'pathogenic cell type'
+      : cellTypes.length === 1
+        ? cellTypes[0]
+        : `${cellTypes.length} pathogenic cell types`
+
   const anyBystander = comps.some((c) => c.ref_pop === 'B')
-  const totP = comps.reduce((s, c) => s + (c.p_donors || 0), 0)
-  const totR = comps.reduce((s, c) => s + (c.ref_donors || 0), 0)
-  const cellsP = comps.reduce((s, c) => s + (c.p_cells || 0), 0)
-  const cellsR = comps.reduce((s, c) => s + (c.ref_cells || 0), 0)
+  const anyControl = comps.some((c) => c.ref_kind === 'control')
+  const pRange = donorRangeFromCohorts(cohorts, 'p_donors')
+  const rRange = donorRangeFromCohorts(cohorts, 'ref_donors')
   const n = (x) => (x || 0).toLocaleString()
 
+  const refSummary = anyControl
+    ? 'disease-specific control (e.g. normal scar for keloid MFB)'
+    : anyBystander
+      ? `healthy ${cellTypes[0] || 'cells'}, or bystander types where no healthy arm exists`
+      : `healthy ${cellTypes[0] || 'same cell type'}`
+
   return (
-    <div className="panel" style={{ marginBottom: 14 }}>
-      <div className="panel-head">
-        <h2>What is being compared</h2>
-        <span className="hint">Every score below contrasts these two groups</span>
-      </div>
-      <div className="panel-body" style={{ padding: '14px 16px' }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'stretch' }}>
-          <div style={{ flex: '1 1 260px', border: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${COLORS.crimson}`, borderRadius: 4, padding: '10px 12px' }}>
-            <div style={{ fontSize: 11, letterSpacing: 0.4, color: COLORS.crimson, fontWeight: 700 }}>
-              PATHOGENIC (P)
-            </div>
-            <div style={{ fontSize: 13.5, marginTop: 3, textTransform: 'capitalize' }}>
-              {ct} from <strong>{info.disease}</strong> tissue
-            </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-              {n(totP)} donors · {n(cellsP)} cells
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', fontSize: 20, color: COLORS.muted }}>vs</div>
-
-          <div style={{ flex: '1 1 260px', border: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${COLORS.teal}`, borderRadius: 4, padding: '10px 12px' }}>
-            <div style={{ fontSize: 11, letterSpacing: 0.4, color: COLORS.teal, fontWeight: 700 }}>
-              REFERENCE ({anyBystander ? 'H / B' : 'H'})
-            </div>
-            <div style={{ fontSize: 13.5, marginTop: 3, textTransform: 'capitalize' }}>
-              {anyBystander
-                ? `${ct} from healthy donors, or other cell types where no healthy arm exists`
-                : `${ct} from healthy / control donors`}
-            </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-              {n(totR)} donors · {n(cellsR)} cells
-            </div>
-          </div>
+    <div className="comparison-compact dash-card" key={info?.key}>
+      <div className="comparison-compact-main">
+        <span className="comparison-label">What we compare · {disease}</span>
+        <div className="comparison-line">
+          <span className="comparison-pathogenic">
+            <span className="comparison-tag">P</span>
+            <span style={{ textTransform: 'capitalize' }}>{disease}</span>
+            <span className="muted" style={{ fontWeight: 400 }}>
+              {' '}
+              · {ctSummary}
+            </span>
+          </span>
+          <span className="comparison-vs">vs</span>
+          <span className="comparison-reference">
+            <span className="comparison-tag ref">Ref</span>
+            {refSummary}
+          </span>
         </div>
-
-        <p className="muted" style={{ fontSize: 12.5, margin: '12px 0 0', lineHeight: 1.55 }}>
-          <strong style={{ color: COLORS.ink }}>So the fold-change is same-cell-type, different-donors:</strong>{' '}
-          {ct} taken from {info.disease} patients versus the <em>same</em> {ct} taken from healthy
-          donors — not fibroblast-vs-immune-cell, and not disease-vs-other-disease. A positive
-          log2FC means the gene is higher in the diseased {ct}. Because the two groups come from
-          different people, every quantity is computed per donor and then averaged across donors.
-        </p>
-
-        <details style={{ marginTop: 10 }}>
-          <summary className="link-btn" style={{ fontSize: 12, cursor: 'pointer' }}>
-            Per-cohort breakdown ({comps.length})
-          </summary>
-          <div style={{ marginTop: 8, overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
+        <div className="comparison-stats muted">
+          {pRange ? `${pRange.label} pathogenic donors` : '—'}
+          {rRange ? ` · ${rRange.label} reference` : ''}
+          {' · '}{cohorts.length} cohort{cohorts.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+      <button type="button" className="link-btn comparison-details-btn" onClick={() => setOpen((o) => !o)}>
+        {open ? 'Hide cohort details' : `View ${disease} cohort details`}
+      </button>
+      {open ? (
+        <div className="comparison-expanded">
+          <p className="muted" style={{ fontSize: 12.5, margin: '0 0 10px', lineHeight: 1.55 }}>
+            Each row is an independent study. Pathogenic cells from <strong>{disease}</strong> tissue
+            are compared to that cohort&apos;s reference arm.
+          </p>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="comparison-table">
               <thead>
-                <tr style={{ textAlign: 'left', color: COLORS.muted }}>
-                  <th style={{ padding: '4px 8px 4px 0' }}>Cohort</th>
-                  <th style={{ padding: '4px 8px' }}>Pathogenic</th>
-                  <th style={{ padding: '4px 8px' }}>Reference</th>
+                <tr>
+                  <th>Cohort</th>
+                  <th>Pathogenic — {disease}</th>
+                  <th>Reference</th>
                 </tr>
               </thead>
               <tbody>
                 {cohorts.map((c) =>
                   c.comparison ? (
-                    <tr key={c.key} style={{ borderTop: `1px solid ${COLORS.border}` }}>
-                      <td style={{ padding: '5px 8px 5px 0', whiteSpace: 'nowrap' }}>{c.cohort}</td>
-                      <td style={{ padding: '5px 8px' }}>
-                        {n(c.comparison.p_donors)} donors · {n(c.comparison.p_cells)} cells
+                    <tr key={c.key}>
+                      <td>
+                        <strong>{c.cohort}</strong>
+                        {c.cell_type ? (
+                          <span className="muted" style={{ display: 'block', fontSize: 11.5 }}>
+                            {c.cell_type}
+                          </span>
+                        ) : null}
                       </td>
-                      <td style={{ padding: '5px 8px' }}>
-                        {c.comparison.ref_kind === 'healthy' ? 'Healthy' : 'Bystander cell types'} ·{' '}
-                        {n(c.comparison.ref_donors)} donors · {n(c.comparison.ref_cells)} cells
+                      <td>
+                        <span className="comparison-row-label pathogenic">
+                          {c.comparison.p_label || `${disease} (pathogenic)`}
+                        </span>
+                        <span className="comparison-row-counts muted">
+                          {' '}
+                          · {n(c.comparison.p_donors)} donors · {n(c.comparison.p_cells)} cells
+                        </span>
+                      </td>
+                      <td>
+                        <span className="comparison-row-label reference">
+                          {c.comparison.ref_label
+                            || (c.comparison.ref_kind === 'healthy'
+                              ? 'Healthy / control'
+                              : c.comparison.ref_kind === 'control'
+                                ? 'Disease-specific control'
+                                : 'Bystander cell types')}
+                        </span>
+                        <span className="comparison-row-counts muted">
+                          {' '}
+                          · {n(c.comparison.ref_donors)} donors · {n(c.comparison.ref_cells)} cells
+                        </span>
                       </td>
                     </tr>
                   ) : null,
@@ -92,8 +123,8 @@ export default function ComparisonPanel({ info }) {
               </tbody>
             </table>
           </div>
-        </details>
-      </div>
+        </div>
+      ) : null}
     </div>
   )
 }

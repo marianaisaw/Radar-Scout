@@ -20,7 +20,7 @@ const UNITS = [
   { k: 'pct_over_threshold', label: '% cells over sensor threshold', d: 1 },
 ]
 
-export default function CellTypeExpressionPanel({ data, gene, pathogenicHint }) {
+export default function CellTypeExpressionPanel({ data, gene, pathogenicHint, embedded = false }) {
   const [unit, setUnit] = useState('mean_cp10k')
   const [state, setState] = useState('diseased')
 
@@ -56,15 +56,20 @@ export default function CellTypeExpressionPanel({ data, gene, pathogenicHint }) 
   const max = rows.length ? Math.max(...rows.map((r) => r[unit] ?? 0)) : 1
   const u = UNITS.find((x) => x.k === unit)
 
+  const Wrapper = embedded ? 'div' : 'div'
+  const wrapperClass = embedded ? 'ct-expr-embedded' : 'panel viz-panel'
+
   return (
-    <div className="panel viz-panel">
-      <div className="panel-head">
-        <h2>Absolute expression by cell type</h2>
-        <span className="hint">
-          {hasGene ? `${gene} · ${state} tissue` : `Profiled genes: ${(data.genes || []).join(', ')}`}
-        </span>
-      </div>
-      <div className="panel-body">
+    <Wrapper className={wrapperClass}>
+      {!embedded ? (
+        <div className="panel-head">
+          <h2>Absolute expression by cell type</h2>
+          <span className="hint">
+            {hasGene ? `${gene} · ${state} tissue` : `Profiled genes: ${(data.genes || []).join(', ')}`}
+          </span>
+        </div>
+      ) : null}
+      <div className={embedded ? undefined : 'panel-body'}>
         {data.comparability && !data.same_dataset ? (
           <div
             style={{
@@ -197,6 +202,6 @@ export default function CellTypeExpressionPanel({ data, gene, pathogenicHint }) 
           </>
         )}
       </div>
-    </div>
+    </Wrapper>
   )
 }

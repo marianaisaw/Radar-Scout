@@ -1,10 +1,11 @@
-// Slim top header: title, disease selector (one option per disease, pooled),
-// gene search, a stats strip, and a compact list of the pooled cohorts so users
-// can see what went into the consensus ranking.
+import { donorRangeFromCohorts } from '../lib/utils'
+
+function titleCase(s) {
+  if (!s) return '—'
+  return s.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 export default function Header({
-  diseases,
-  activeKey,
-  setActiveKey,
   info,
   query,
   setQuery,
@@ -12,96 +13,60 @@ export default function Header({
   nTotal,
   loading,
 }) {
-  const donors = info?.n_donors || {}
   const cohorts = info?.cohorts || []
+  const pRange = donorRangeFromCohorts(cohorts, 'p_donors')
+  const hRange = donorRangeFromCohorts(cohorts, 'ref_donors')
 
-  // One option per disease: the disease name, plus a cohort count when >1.
-  const optLabel = (d) =>
-    d.n_cohorts > 1 ? `${d.disease} · ${d.n_cohorts} cohorts` : d.disease
+  const kpis = [
+    { label: 'Cohorts', value: info?.n_cohorts ?? '—', accent: 'teal' },
+    {
+      label: 'Targets',
+      value: loading ? '…' : `${nCandidates}${!loading && nCandidates !== nTotal ? ` / ${nTotal}` : ''}`,
+      accent: 'hero',
+    },
+    { label: 'Pathogenic donors', value: pRange?.label ?? '—', hint: 'Per cohort', accent: 'crimson' },
+    { label: 'Reference donors', value: hRange?.label ?? '—', hint: 'Per cohort', accent: 'teal' },
+  ]
 
   return (
-    <header className="header">
-      <div className="header-top">
-        <div className="brand">
+    <header className="dashboard-header">
+      <div className="dashboard-topbar">
+        <div className="topbar-brand">
           <h1>
             RADAR<span className="accent">·</span>Scout
           </h1>
-          <span className="tagline">RNA sensor target discovery · organ fibrosis</span>
         </div>
-        <div className="controls">
-          <div className="control">
-            <label htmlFor="sel-disease">Disease</label>
-            <select
-              id="sel-disease"
-              value={activeKey}
-              onChange={(e) => setActiveKey(e.target.value)}
-              style={{ minWidth: 220, textTransform: 'capitalize' }}
-            >
-              {diseases.map((d) => (
-                <option key={d.key} value={d.key}>
-                  {optLabel(d)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="control">
-            <label htmlFor="search">Search gene</label>
-            <input
-              id="search"
-              className="search"
-              type="search"
-              placeholder="e.g. POSTN"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
+
+        <div className="topbar-context">
+          <h2 className="topbar-disease">{titleCase(info?.disease)}</h2>
+          <span className="topbar-context-sub">Sensor-ranked RNA targets</span>
         </div>
       </div>
 
-      <div className="stats-strip">
-        <div className="stat">
-          <span className="value" style={{ textTransform: 'capitalize' }}>
-            {info?.disease ?? '—'}
-          </span>
-          <span className="label">Disease</span>
-        </div>
-        <div className="stat">
-          <span className="value">{info?.n_cohorts ?? '—'}</span>
-          <span className="label">Cohorts pooled</span>
-        </div>
-        <div className="stat">
-          <span className="value">
-            {loading ? '…' : nCandidates}
-            {!loading && nCandidates !== nTotal ? <span className="sub"> / {nTotal}</span> : null}
-          </span>
-          <span className="label">Genes ranked</span>
-        </div>
-        <div className="stat">
-          <span className="value">{donors.P ?? '—'}</span>
-          <span className="label">Donors · pathogenic</span>
-        </div>
-        <div className="stat">
-          <span className="value">{donors.H ?? '—'}</span>
-          <span className="label">Donors · healthy</span>
-        </div>
-        <div className="stat">
-          <span className="value">{donors.B ?? '—'}</span>
-          <span className="label">Donors · background</span>
-        </div>
-      </div>
-
-      {cohorts.length ? (
-        <div className="cohort-strip">
-          <span className="cohort-lead">Cohorts</span>
-          {cohorts.map((c) => (
-            <span className="cohort-pill" key={c.key} title={c.cell_type}>
-              {c.cohort}
-              <span className="cohort-ct">{c.cell_type}</span>
-            </span>
+      <div className="dashboard-kpi-row">
+        <div className="dashboard-kpis">
+          {kpis.map((k) => (
+            <div key={k.label} className={`kpi-card accent-${k.accent}`} title={k.hint}>
+              <span className="kpi-label">{k.label}</span>
+              <span className="kpi-value">{k.value}</span>
+              {k.hint ? <span className="kpi-hint">{k.hint}</span> : null}
+            </div>
           ))}
         </div>
-      ) : null}
+
+        <div className="topbar-search-wrap kpi-row-search">
+          <input
+            id="search"
+            className="search topbar-search"
+            type="search"
+            placeholder="Search gene…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoComplete="off"
+            aria-label="Search gene"
+          />
+        </div>
+      </div>
     </header>
   )
 }
