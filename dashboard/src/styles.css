@@ -413,7 +413,7 @@ button {
 .dashboard-content .dashboard-workspace {
   gap: 10px;
   padding: 0 18px 12px;
-  grid-template-columns: minmax(300px, 47fr) minmax(320px, 53fr);
+  grid-template-columns: minmax(0, 47fr) minmax(0, 53fr);
 }
 
 .dashboard-content .workspace-ranks {
@@ -819,10 +819,46 @@ button {
   margin-top: auto;
 }
 
+@media (max-width: 1280px) {
+  .dashboard-workspace,
+  .dashboard-content .dashboard-workspace {
+    grid-template-columns: 1fr;
+    overflow: visible;
+    padding-bottom: 16px;
+  }
+
+  .workspace-ranks {
+    max-height: min(46vh, 460px);
+    min-height: 260px;
+  }
+
+  .workspace-ranks .ranks-panel {
+    min-height: 220px;
+  }
+
+  .workspace-detail {
+    overflow: visible;
+  }
+
+  .dashboard-content {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
 @media (max-width: 1100px) {
   .dashboard-kpis { flex-wrap: wrap; }
   .dashboard-kpi-row { flex-wrap: wrap; }
   .kpi-row-search { flex: 1 1 100%; }
+
+  .sensor-header-metrics-compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .why-list-compact {
+    columns: 1;
+    max-height: none;
+  }
 }
 
 @media (max-width: 900px) {
@@ -837,17 +873,110 @@ button {
   .topbar-context {
     justify-self: center;
   }
+
+  .sensor-header-metrics-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .panel-head .hint {
+    width: 100%;
+  }
+
+  .chart-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .formula-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 @media (max-width: 640px) {
   .dashboard-kpis { gap: 8px; }
   .kpi-card { min-width: calc(50% - 8px); max-width: none; flex: 1 1 calc(50% - 8px); }
   .kpi-row-search { flex: 1 1 100%; min-width: 0; }
+
+  .dashboard-content .dashboard-topbar,
+  .dashboard-topbar {
+    padding: 8px 12px 6px;
+  }
+
+  .dashboard-content .dashboard-kpi-row,
+  .dashboard-kpi-row {
+    padding: 0 12px 8px;
+  }
+
+  .dashboard-content .dashboard-workspace,
+  .dashboard-workspace {
+    padding: 8px 10px 12px;
+    gap: 8px;
+  }
+
+  .sensor-hero-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sensor-header-metrics-compact {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .list-toolbar {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .list-toolbar .chip {
+    flex-shrink: 0;
+  }
+
+  .gene-rank-row {
+    grid-template-columns: 24px minmax(0, 1fr);
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .gene-card-top {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .disease-nav-btn {
+    min-width: 132px;
+    max-width: 180px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sensor-header-metrics-compact {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-card {
+    flex: 1 1 100%;
+    min-width: 100%;
+  }
+
+  .topbar-brand h1 {
+    font-size: 15px;
+  }
+
+  .topbar-disease {
+    font-size: 14px;
+  }
 }
 
 .dashboard-workspace {
   display: grid;
-  grid-template-columns: minmax(380px, 52fr) minmax(360px, 48fr);
+  grid-template-columns: minmax(0, 52fr) minmax(0, 48fr);
   gap: var(--gap);
   flex: 1;
   min-height: 0;
@@ -1006,30 +1135,46 @@ button {
   font-weight: 500;
 }
 
-@media (max-width: 960px) {
-  .dashboard-shell { padding: 8px; }
+@media (max-width: 1120px) {
   .dashboard-shell {
-    height: 100%;
     padding: 0;
-    border-radius: 0;
   }
 
-  .dashboard-frame { flex-direction: column; border-radius: var(--radius-xl); height: 100%; }
+  .dashboard-frame {
+    flex-direction: column;
+    border-radius: 0;
+    height: 100%;
+    min-height: 0;
+  }
+
   .disease-nav {
     width: 100%;
     min-height: auto;
     flex-direction: row;
+    align-items: center;
     border-right: none;
     border-bottom: 1px solid var(--nav-border);
     padding: 10px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
-  .disease-nav-brand { padding: 0 12px 0 0; }
+
+  .disease-nav-brand {
+    padding: 0 12px 0 0;
+    flex-shrink: 0;
+  }
+
   .disease-nav-list {
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     padding: 0;
     justify-content: flex-start;
+    overflow-x: auto;
+    min-width: 0;
   }
+
   .disease-nav-btn {
     width: auto;
     min-width: 148px;
@@ -1039,6 +1184,7 @@ button {
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;
+    flex-shrink: 0;
   }
 
   .disease-nav-btn-label {
@@ -1050,14 +1196,62 @@ button {
   .disease-nav-btn.active {
     box-shadow: inset 0 -3px 0 var(--teal);
   }
+}
+
+@media (max-width: 960px) {
+  #root {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .dashboard-shell {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 0;
+  }
+
+  .dashboard-frame {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .dashboard-content {
+    height: auto;
+    overflow: visible;
+  }
+
   .dashboard-workspace {
     grid-template-columns: 1fr;
     overflow: visible;
     padding: 12px;
   }
+
   .workspace-ranks {
     max-height: none;
-    flex: 1;
+    min-height: 0;
+  }
+
+  .workspace-ranks .ranks-panel {
+    min-height: 280px;
+    max-height: min(58vh, 560px);
+  }
+
+  .gene-rank-scroll-wrap {
+    min-height: 180px;
+  }
+
+  .comparison-compact {
+    padding: 12px 14px;
+  }
+
+  .comparison-line {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }
 
@@ -2420,6 +2614,7 @@ table.compare-table tbody tr:hover { background: var(--bg-faint); }
 }
 
 .sensor-header-metrics-compact {
+  display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
