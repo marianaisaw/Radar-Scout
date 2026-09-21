@@ -16,14 +16,27 @@ from rnaplfold.analysis import (
     extract_target_accessibility,
     find_best_accessible_window,
     find_best_windows_for_target,
+    find_codon_sites,
     find_target_matches,
+    fragment_codon_accessibility,
     summary_row,
     unpaired_columns,
 )
 from rnaplfold.parser import LunpParseError, parse_lunp_text
-from rnaplfold.plotting import plot_candidate_accessibility, plot_transcript_accessibility
+from rnaplfold.plotting import (
+    plot_candidate_accessibility,
+    plot_fragment_accessibility,
+    plot_transcript_accessibility,
+)
 from rnaplfold.runner import RNAplfoldError, check_rnaplfold_installation, run_rnaplfold
-from utils.fasta import FastaError, ParsedFasta, normalize_sequence, parse_fasta, validate_rna_alphabet
+from utils.fasta import (
+    FastaError,
+    ParsedFasta,
+    normalize_sequence,
+    parse_fasta,
+    strip_display_ellipsis,
+    validate_rna_alphabet,
+)
 
 
 @st.cache_data(show_spinner=False)
@@ -59,17 +72,26 @@ def _window_label(length: int) -> str:
 
 def render_accessibility_tab() -> None:
     st.write(
-        "Fold one full transcript isoform with RNAplfold, then click a row in "
-        "your **Saved candidates** table. The app uses that row’s Gao "
-        "**candidate** sequence (the endogenous target, not the sensor)."
+        "Estimate how unpaired an endogenous trigger is. Use **full transcript** "
+        "when you have the isoform FASTA, or **trigger-only** to screen a pasted "
+        "fragment. Full-transcript results are the ones to trust for a site; "
+        "fragment-only is approximate."
     )
     with st.expander("What this tab does"):
         st.markdown(
             """
+**Full transcript (recommended)**
 1. Paste or upload **one** transcript FASTA (from the Ensembl tab).
 2. RNAplfold predicts, for each nucleotide, how likely it is to be **unpaired**.
 3. Click a **saved** RADAR candidate. The app finds that `candidate` stretch
    in the transcript and reports how open it is.
+
+**Trigger-only fragment (screening)**
+1. Paste just the trigger sequence and the 3-nt variant codon.
+   Gao 90-nt rows may contain `...`; those dots are removed and the sides joined.
+2. RNAplfold is run on that fragment **alone** (no surrounding mRNA).
+3. The app locates the codon (and flags 0 or multiple hits) and reports
+   mean unpaired probability at the codon and in a small window around it.
 
 Numbers go from **0** (usually folded) to **1** (usually unpaired).
 These compare candidates; they do not score whether a RADAR sensor will work.
@@ -79,6 +101,19 @@ These compare candidates; they do not score whether a RADAR sensor will work.
     ok, version_or_error = check_rnaplfold_installation()
     if not ok:
         st.warning(version_or_error)
+
+    mode = st.radio(
+        "Analysis mode",
+        [
+            "Full transcript (recommended)",
+            "Trigger-only fragment (screening)",
+        ],
+        horizontal=True,
+        key="acc_analysis_mode",
+    )
+    if mode.startswith("Trigger-only"):
+        _render_fragment_mode()
+        return
 
     _render_step_transcript()
     result = st.session_state.get("acc_rnaplfold")
@@ -170,6 +205,311 @@ def _rnaplfold_settings() -> tuple[int, int, int]:
             "probabilities are calculated"
         )
     return int(w), int(l), int(u)
+
+
+_FRAGMENT_ONLY_LABEL = "fragment-only (approximate, for screening)"
+
+
+def _parse_trigger_fragment(text: str) -> tuple[str, dict]:
+    raw = str(text or "").strip()
+    if not raw:
+        raise FastaError("Paste a trigger sequence.")
+    if raw.startswith(">"):
+        parsed = parse_fasta(raw)
+        sequence, extra = strip_display_ellipsis(parsed.sequence)
+        validate_rna_alphabet(sequence)
+        return sequence, extra
+    sequence, extra = strip_display_ellipsis(raw)
+    if not sequence:
+        raise FastaError("Paste a trigger sequence.")
+    validate_rna_alphabet(sequence)
+    return sequence, extra
+
+
+def _render_fragment_mode() -> None:
+    st.header("Trigger-only accessibility")
+    st.info(
+        f"**{_FRAGMENT_ONLY_LABEL.capitalize()}.** RNAplfold runs on the pasted "
+        "trigger fragment alone, with no surrounding mRNA. Use this to screen "
+        "sites quickly. It is not a substitute for full-transcript accessibility."
+    )
+
+    saved = _saved_candidates_table()
+    if not saved.empty:
+        labels = []
+        for i, row in saved.iterrows():
+            gene = str(row.get("gene", "") or "")
+            variant = str(row.get("variant", "") or "")
+            candidate = str(row.get("candidate", "") or "")
+            preview = candidate[:18] + ("…" if len(candidate) > 18 else "")
+            labels.append(f"{i + 1}: {gene} {variant} {preview}")
+        chosen_label = st.selectbox(
+            "Optional: fill from a saved candidate",
+            labels,
+            key="acc_frag_saved_label",
+        )
+        if st.button("Use this saved trigger", key="acc_frag_use_saved"):
+            row = saved.iloc[labels.index(chosen_label)]
+            st.session_state.acc_frag_trigger = str(row.get("candidate", "") or "")
+            st.session_state.acc_frag_codon = str(row.get("variant", "") or "")
+
+    trigger_text = st.text_area(
+        "Trigger sequence",
+        height=140,
+        placeholder="Paste the endogenous trigger only. Gao 90-nt rows may include ... in the middle.",
+        key="acc_frag_trigger",
+    )
+    codon_col, flank_col = st.columns([2, 1])
+    with codon_col:
+        codon_text = st.text_input(
+            "Variant codon (3 nt)",
+            placeholder="TCA",
+            key="acc_frag_codon",
+            help="The 3-nt codon to locate in the trigger, for example Gao’s variant column.",
+        )
+    with flank_col:
+        flank = st.number_input(
+            "Window around codon (± nt)",
+            min_value=0,
+            max_value=30,
+            value=5,
+            step=1,
+            key="acc_frag_flank",
+            help="Mean unpaired probability is also reported over this many nucleotides on each side of the codon.",
+        )
+
+    run_clicked = st.button(
+        "Fold this trigger fragment",
+        type="primary",
+        key="acc_frag_fold",
+    )
+    st.caption(
+        "If the paste has `...` in the middle (Gao 90-nt display format), "
+        "the dots are removed and the two sides are joined."
+    )
+    if run_clicked:
+        _run_fragment_analysis(trigger_text, codon_text, int(flank))
+
+    stored = st.session_state.get("acc_fragment_result")
+    if stored is None:
+        st.caption(
+            "Paste a trigger and codon, then fold. Results are "
+            f"{_FRAGMENT_ONLY_LABEL}."
+        )
+        return
+    _render_fragment_results(stored)
+
+
+def _run_fragment_analysis(trigger_text: str, codon_text: str, flank: int) -> None:
+    try:
+        fragment, ellipsis_info = _parse_trigger_fragment(trigger_text)
+        located = find_codon_sites(fragment, codon_text)
+    except (FastaError, ValueError) as exc:
+        st.error(str(exc))
+        return
+
+    matches = located["matches"]
+    rc_matches = located["reverse_complement_matches"]
+    if not matches:
+        if rc_matches:
+            positions = ", ".join(site.label for site in rc_matches)
+            st.error(
+                "That variant codon was not found in the trigger fragment "
+                f"(0 hits). The reverse complement was found at {positions}."
+            )
+        else:
+            st.error(
+                "That variant codon was not found in the trigger fragment (0 hits)."
+            )
+        st.session_state.acc_fragment_result = None
+        return
+
+    n = len(fragment)
+    w, l, u = n, n, min(20, n)
+    try:
+        with st.spinner(
+            f"Running RNAplfold on the trigger fragment only ({n} nt)…"
+        ):
+            accessibility, version = cached_run_rnaplfold(
+                fragment,
+                w,
+                l,
+                u,
+                "trigger_fragment",
+            )
+    except (RNAplfoldError, LunpParseError) as exc:
+        st.error(str(exc))
+        return
+
+    st.session_state.acc_fragment_result = {
+        "fragment": fragment,
+        "codon": located["codon_sequence"],
+        "matches": matches,
+        "flank": flank,
+        "accessibility": accessibility,
+        "w": w,
+        "l": l,
+        "u": u,
+        "version": version,
+        "ellipsis_info": ellipsis_info,
+    }
+
+
+def _render_fragment_results(stored: dict) -> None:
+    matches = stored["matches"]
+    fragment = stored["fragment"]
+    codon = stored["codon"]
+    accessibility = stored["accessibility"]
+    flank = int(stored["flank"])
+
+    st.success(
+        f"Folded a **{len(fragment)} nt** trigger fragment with "
+        f"W={stored['w']}, L={stored['l']}, u={stored['u']}. "
+        f"This is **{_FRAGMENT_ONLY_LABEL}**."
+    )
+    ellipsis_info = stored.get("ellipsis_info") or {}
+    part_lengths = ellipsis_info.get("part_lengths") or []
+    if ellipsis_info.get("had_ellipsis") and len(part_lengths) >= 2:
+        joined = " + ".join(f"{n} nt" for n in part_lengths)
+        st.caption(
+            f"Removed `...` and joined {joined} → **{len(fragment)} nt**. "
+            "That is the Gao 90-nt candidate display format, not missing RNA."
+        )
+
+    if len(matches) == 1:
+        site = matches[0]
+        st.info(f"Variant codon **{codon}** found once at **{site.label}**.")
+    else:
+        st.warning(
+            f"Variant codon **{codon}** occurs **{len(matches)} times** in this "
+            "fragment. Choose which occurrence to inspect."
+        )
+        labels = [f"Hit {i}: {site.label} ({site.sequence})" for i, site in enumerate(matches, start=1)]
+        chosen = st.selectbox(
+            "Which codon occurrence?",
+            labels,
+            key="acc_frag_occurrence",
+        )
+        site = matches[labels.index(chosen)]
+
+    try:
+        exposure = fragment_codon_accessibility(
+            accessibility, site, flank=flank
+        )
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+
+    codon_mean = exposure.get("codon_mean_l1")
+    window_mean = exposure.get("window_mean_l1")
+    p_codon = exposure.get("codon_p_unpaired")
+    letters = exposure.get("per_nt") or []
+
+    st.caption(f"All numbers below are **{_FRAGMENT_ONLY_LABEL}**.")
+    cards = st.columns(3)
+    cards[0].metric(
+        "Mean P(unpaired) at codon",
+        format_probability(codon_mean),
+        help="Average unpaired_l1 of the three codon nucleotides.",
+    )
+    cards[1].metric(
+        f"Mean P(unpaired) ±{flank} nt",
+        format_probability(window_mean),
+        help=(
+            f"Average unpaired_l1 from nt {exposure['window_start']}–"
+            f"{exposure['window_end']} (codon plus {flank} nt on each side, "
+            "clipped to the fragment)."
+        ),
+    )
+    cards[2].metric(
+        "P(codon unpaired)",
+        format_probability(p_codon),
+        help="Chance that all three codon nucleotides are unpaired together.",
+    )
+
+    if letters:
+        per_cols = st.columns(len(letters))
+        for i, row in enumerate(letters):
+            per_cols[i].metric(
+                f"{row['nt']} (nt {row['position']})",
+                format_probability(row["unpaired_l1"]),
+            )
+
+    st.caption(
+        f"Window used: nt {exposure['window_start']}–{exposure['window_end']} "
+        f"in the {len(fragment)} nt fragment."
+    )
+
+    fig = plot_fragment_accessibility(
+        accessibility,
+        codon_start=site.start,
+        codon_end=site.end,
+        window_start=exposure["window_start"],
+        window_end=exposure["window_end"],
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "Orange = variant codon; green = window around it. "
+        f"{_FRAGMENT_ONLY_LABEL.capitalize()} · ViennaRNA {stored['version']}"
+    )
+
+    compact = accessibility[
+        (accessibility["position"] >= exposure["window_start"])
+        & (accessibility["position"] <= exposure["window_end"])
+    ][["position", "nt", "unpaired_l1"]].copy()
+    compact = compact.rename(
+        columns={
+            "position": "fragment_position",
+            "unpaired_l1": "P(unpaired)",
+        }
+    )
+    st.dataframe(compact, use_container_width=True, hide_index=True)
+
+    if len(matches) > 1:
+        st.write("All codon hits in this fragment:")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "start": hit.start,
+                        "end": hit.end,
+                        "codon": hit.sequence,
+                    }
+                    for hit in matches
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    summary = pd.DataFrame(
+        [
+            {
+                "mode": _FRAGMENT_ONLY_LABEL,
+                "fragment_length": len(fragment),
+                "variant_codon": codon,
+                "n_hits": len(matches),
+                "codon_start": site.start,
+                "codon_end": site.end,
+                "codon_mean_unpaired_l1": codon_mean,
+                "codon_p_unpaired": p_codon,
+                "window_flank": flank,
+                "window_start": exposure["window_start"],
+                "window_end": exposure["window_end"],
+                "window_mean_unpaired_l1": window_mean,
+                "RNAplfold_W": stored["w"],
+                "RNAplfold_L": stored["l"],
+                "RNAplfold_u": stored["u"],
+            }
+        ]
+    )
+    st.download_button(
+        "Download fragment-only summary CSV",
+        data=summary.to_csv(index=False),
+        file_name="trigger_fragment_accessibility.csv",
+        mime="text/csv",
+        key="acc_frag_download",
+    )
 
 
 def _render_step_transcript() -> None:

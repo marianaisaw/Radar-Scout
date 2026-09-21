@@ -105,6 +105,63 @@ def plot_candidate_accessibility(
     return fig
 
 
+def plot_fragment_accessibility(
+    accessibility: pd.DataFrame,
+    *,
+    codon_start: int,
+    codon_end: int,
+    window_start: int | None = None,
+    window_end: int | None = None,
+) -> go.Figure:
+    """Per-nucleotide unpaired probability on a trigger fragment."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=accessibility["position"],
+            y=accessibility["unpaired_l1"],
+            mode="lines",
+            name="unpaired_l1",
+            line={"color": "#1f4e79", "width": 2},
+            customdata=accessibility["nt"],
+            hovertemplate="nt %{x} %{customdata}<br>P(unpaired)=%{y:.3f}<extra></extra>",
+        )
+    )
+    if (
+        window_start is not None
+        and window_end is not None
+        and (window_start != codon_start or window_end != codon_end)
+    ):
+        fig.add_vrect(
+            x0=window_start,
+            x1=window_end,
+            fillcolor="#94d2bd",
+            opacity=0.22,
+            line_width=0,
+            annotation_text="window",
+            annotation_position="top left",
+        )
+    fig.add_vrect(
+        x0=codon_start,
+        x1=codon_end,
+        fillcolor="#f4a261",
+        opacity=0.35,
+        line_width=0,
+        annotation_text="variant codon",
+        annotation_position="top right",
+    )
+    fig.update_layout(
+        title="Fragment-only (approximate, for screening)",
+        xaxis_title="Position in the trigger fragment",
+        yaxis_title="Chance this nucleotide is unpaired",
+        yaxis={"range": [0, 1]},
+        template="plotly_white",
+        margin={"l": 40, "r": 20, "t": 50, "b": 40},
+        height=340,
+        showlegend=False,
+    )
+    return fig
+
+
 def plot_sensor_uag_accessibility(
     accessibility: pd.DataFrame,
     regions: list[tuple[int, int, str]],

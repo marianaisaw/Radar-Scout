@@ -24,6 +24,24 @@ def normalize_sequence(sequence: str) -> str:
     return re.sub(r"\s+", "", sequence).upper()
 
 
+def strip_display_ellipsis(sequence: str) -> tuple[str, dict]:
+    """Remove Gao-style ``...`` / ``…`` used to join the two ends of a trigger.
+
+    Many 90-nt ``candidate`` values are stored as left + ``...`` + right, where
+    the two sides add up to the real sequence. Dots are not nucleotides.
+    """
+    compact = normalize_sequence(sequence).replace("…", "...")
+    had = "..." in compact
+    parts = [part for part in compact.split("...") if part]
+    joined = "".join(parts)
+    if "." in joined:
+        raise FastaError(
+            "Sequence contains '.' that is not a '...' gap. "
+            "Use A, C, G, T, or U, or '...' to join a truncated trigger."
+        )
+    return joined, {"had_ellipsis": had, "part_lengths": [len(part) for part in parts]}
+
+
 def dna_like(sequence: str) -> str:
     """Normalize for T/U-equivalent matching."""
     return normalize_sequence(sequence).replace("U", "T")

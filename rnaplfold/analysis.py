@@ -261,6 +261,116 @@ def summary_row(
 
 
 @dataclass(frozen=True)
+class CodonSite:
+    """A codon/motif hit in a fragment, 1-based inclusive coordinates."""
+
+    start: int
+    end: int
+    sequence: str
+
+    @property
+    def label(self) -> str:
+        return f"nt {self.start}–{self.end}"
+
+
+def find_codon_sites(fragment: str, codon: str) -> dict[str, Any]:
+    """Locate a variant codon in a trigger fragment (T/U equivalent)."""
+    fragment_seq = normalize_sequence(fragment)
+    codon_seq = normalize_sequence(codon)
+    if not fragment_seq:
+        raise ValueError("Paste a trigger sequence.")
+    if not codon_seq:
+        raise ValueError("Enter a variant codon.")
+    validate_rna_alphabet(fragment_seq)
+    validate_rna_alphabet(codon_seq)
+    if len(codon_seq) != 3:
+        raise ValueError(
+            f"Variant codon must be 3 nucleotides (got {len(codon_seq)})."
+        )
+    if len(fragment_seq) < 3:
+        raise ValueError("Trigger fragment must be at least 3 nucleotides.")
+
+    fragment_key = dna_like(fragment_seq)
+    codon_key = dna_like(codon_seq)
+    matches = _exact_matches(
+        fragment_seq, fragment_key, codon_key, strand="forward"
+    )
+    rc_matches: list[TargetMatch] = []
+    if not matches:
+        rc_key = reverse_complement(codon_seq)
+        rc_matches = _exact_matches(
+            fragment_seq, fragment_key, rc_key, strand="reverse-complement"
+        )
+    return {
+        "fragment_sequence": fragment_seq,
+        "codon_sequence": codon_seq,
+        "matches": [
+            CodonSite(start=hit.start, end=hit.end, sequence=hit.sequence)
+            for hit in matches
+        ],
+        "reverse_complement_matches": [
+            CodonSite(start=hit.start, end=hit.end, sequence=hit.sequence)
+            for hit in rc_matches
+        ],
+    }
+
+
+def fragment_codon_accessibility(
+    accessibility: pd.DataFrame,
+    site: CodonSite,
+    *,
+    flank: int = 5,
+) -> dict[str, Any]:
+    """Mean unpaired probability at a codon and in a small window around it."""
+    if flank < 0:
+        raise ValueError("Window flank must be ≥ 0.")
+    n = int(accessibility["position"].max()) if not accessibility.empty else 0
+    codon_region = accessibility[
+        (accessibility["position"] >= site.start)
+        & (accessibility["position"] <= site.end)
+    ].sort_values("position")
+    if codon_region.empty:
+        raise ValueError(
+            f"No RNAplfold rows for codon coordinates {site.start}–{site.end}."
+        )
+    codon_l1 = [float(value) for value in codon_region["unpaired_l1"].tolist()]
+    letters = [str(nt) for nt in codon_region["nt"].tolist()]
+    p_codon = None
+    codon_len = site.end - site.start + 1
+    column = f"unpaired_l{codon_len}"
+    if column in accessibility.columns:
+        row = accessibility.loc[accessibility["position"] == site.end]
+        if not row.empty:
+            value = row[column].iloc[0]
+            if pd.notna(value):
+                p_codon = float(value)
+
+    window_start = max(1, site.start - flank)
+    window_end = min(n, site.end + flank)
+    window_region = accessibility[
+        (accessibility["position"] >= window_start)
+        & (accessibility["position"] <= window_end)
+    ].sort_values("position")
+    window_l1 = [float(value) for value in window_region["unpaired_l1"].tolist()]
+    return {
+        "codon_mean_l1": float(sum(codon_l1) / len(codon_l1)) if codon_l1 else None,
+        "codon_p_unpaired": p_codon,
+        "per_nt": [
+            {
+                "nt": letter,
+                "position": site.start + offset,
+                "unpaired_l1": prob,
+            }
+            for offset, (letter, prob) in enumerate(zip(letters, codon_l1))
+        ],
+        "window_start": window_start,
+        "window_end": window_end,
+        "window_mean_l1": float(sum(window_l1) / len(window_l1)) if window_l1 else None,
+        "flank": flank,
+    }
+
+
+@dataclass(frozen=True)
 class UagCodon:
     """A UAG/TAG triplet in a sensor, 1-based inclusive coordinates."""
 
