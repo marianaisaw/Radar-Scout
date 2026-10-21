@@ -9,3 +9,7 @@ rnaplfold_out/
 human_RADAR_sensor_candidates.csv.gz
 sequences.txt
 .streamlit/
+node_modules/
+.cache/
+*.ps
+*_lunp

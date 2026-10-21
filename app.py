@@ -25,6 +25,13 @@ import streamlit as st
 
 from accessibility_ui import render_accessibility_tab
 from fasta import render_ncbi_fasta_tab
+from isoformSearch.tpm import (
+    DEFAULT_TISSUE,
+    TPM_PATH,
+    isoform_expression_table,
+    load_tissue_mean_tpm,
+    tissue_options,
+)
 from sensor_structure_ui import render_sensor_structure_tab
 
 DB_PATH = Path("radar_candidates.db")
@@ -148,7 +155,7 @@ def fetch_candidates_sqlite(gene_symbol):
             FROM {TABLE_NAME}
             WHERE "{GENE_COLUMN}" = ? COLLATE NOCASE
         """
-        return pd.read_sql_query(query, connection, params=(gene_symbol,))
+        return pd.read_sql_query(query, connection, params=[gene_symbol])
     finally:
         connection.close()
 
@@ -386,9 +393,13 @@ INSPECT_COLUMN = "isoforms"
 FAVORITE_STORE_COLUMNS = GAO_COLUMNS + DERIVED_COLUMNS
 
 
+def empty_favorites_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=pd.Index(FAVORITE_STORE_COLUMNS))
+
+
 def init_favorites():
     if "favorite_rows" not in st.session_state:
-        st.session_state.favorite_rows = pd.DataFrame(columns=FAVORITE_STORE_COLUMNS)
+        st.session_state.favorite_rows = empty_favorites_frame()
     if "favorite_keys" not in st.session_state:
         st.session_state.favorite_keys = set()
     if "favorites_version" not in st.session_state:
@@ -604,7 +615,8 @@ def render_saved_tab():
         )
     with c_rm:
         if st.button("Remove selected", key="saved_remove"):
-            selected = table_event.selection.rows
+            selection = table_event.get("selection")
+            selected = selection.get("rows", []) if selection else []
             if selected:
                 keys = [candidate_key(filtered.iloc[i]) for i in selected]
                 for key in keys:
@@ -615,10 +627,120 @@ def render_saved_tab():
                 st.warning("Select one or more rows first.")
     with c_clear:
         if st.button("Clear all saved", key="saved_clear"):
-            st.session_state.favorite_rows = pd.DataFrame(columns=FAVORITE_STORE_COLUMNS)
+            st.session_state.favorite_rows = empty_favorites_frame()
             st.session_state.favorite_keys = set()
             bump_favorites_view()
             st.rerun()
+
+
+@st.cache_data(show_spinner="Loading isoform TPM…")
+def cached_tissue_mean_tpm():
+    """Load long-read mean TPM for every cell type once per session."""
+    return load_tissue_mean_tpm()
+
+
+def render_isoform_expression_panel(gene: str, isoform_options: list[str]) -> None:
+    """Show Gao isoforms ranked by presence in the selected long-read cell type."""
+    st.sidebar.divider()
+    st.sidebar.header(f"Isoform expression for {gene}")
+    st.sidebar.caption(
+        "Identify which transcript isoforms are most abundant in the "
+        "biological context where the RADAR sensor will operate."
+    )
+    st.sidebar.selectbox(
+        "Dataset",
+        ["Long-read RNA-seq"],
+        key=f"expr_dataset_{gene}",
+    )
+
+    if not TPM_PATH.exists():
+        st.sidebar.warning(
+            "Add `isoformSearch/quantification_gencode.tpm.txt` to look up "
+            "isoform abundance."
+        )
+        return
+
+    try:
+        cell_types = tissue_options()
+    except Exception as exc:
+        st.sidebar.error(f"Could not read cell-type annotations ({exc}).")
+        return
+
+    if not cell_types:
+        st.sidebar.caption("No cell types found in the long-read RNA-seq file.")
+        return
+
+    default_index = (
+        cell_types.index(DEFAULT_TISSUE) if DEFAULT_TISSUE in cell_types else 0
+    )
+    tissue = st.sidebar.selectbox(
+        "Tissue / cell type",
+        cell_types,
+        index=default_index,
+        key=f"expr_celltype_{gene}",
+        help=(
+            "Every cell type present in the GTEx long-read RNA-seq file. "
+            "Isoforms are ranked by mean TPM in the selected type."
+        ),
+    )
+    st.sidebar.markdown("**Expressed isoforms**")
+
+    if not isoform_options:
+        st.sidebar.caption("No Gao transcript IDs for this gene.")
+        return
+
+    try:
+        tpm_index, sample_counts = cached_tissue_mean_tpm()
+    except Exception as exc:
+        st.sidebar.error(f"Could not read isoform TPM ({exc}).")
+        return
+
+    expressed = isoform_expression_table(isoform_options, tpm_index, tissue)
+    sample_count = sample_counts.get(tissue, 0)
+    if expressed.empty:
+        st.sidebar.caption(
+            f"No Gao isoforms for this gene have TPM > 0 in {tissue}."
+        )
+        st.sidebar.button(
+            "Use expressed isoforms for RADAR filtering",
+            key=f"expr_use_{gene}",
+            disabled=True,
+        )
+        return
+
+    st.sidebar.dataframe(
+        expressed,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Transcript": st.column_config.TextColumn(width="medium"),
+            "TPM": st.column_config.NumberColumn(format="%.1f"),
+            "Rel. %": st.column_config.ProgressColumn(
+                "Relative abundance",
+                min_value=0,
+                max_value=100,
+                format="%.1f%%",
+            ),
+        },
+    )
+    n_expressed = len(expressed)
+    st.sidebar.caption(
+        f"{n_expressed} expressed isoform{'s' if n_expressed != 1 else ''} "
+        f"in {tissue} (mean TPM, {sample_count} sample"
+        f"{'s' if sample_count != 1 else ''})"
+    )
+    filter_key = f"isoform_of_interest_{gene}"
+    expressed_ids = [
+        transcript_id
+        for transcript_id in expressed["Transcript"].tolist()
+        if transcript_id in isoform_options
+    ]
+    if st.sidebar.button(
+        "Use expressed isoforms for RADAR filtering",
+        key=f"expr_use_{gene}",
+        disabled=not expressed_ids,
+    ):
+        st.session_state[filter_key] = expressed_ids
 
 
 def render_radar_tab(gene):
@@ -690,6 +812,7 @@ def render_radar_tab(gene):
         default=length_options,
     )
     isoform_options = sorted(unique_ids)
+    render_isoform_expression_panel(gene, isoform_options)
     if isoform_options:
         isoforms_of_interest = st.sidebar.multiselect(
             "Isoform of interest",

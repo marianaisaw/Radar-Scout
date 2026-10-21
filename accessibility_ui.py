@@ -630,7 +630,8 @@ def _render_step_candidate(result: dict) -> None:
             ),
         },
     )
-    selected_rows = table_event.selection.rows
+    selection = table_event.get("selection")
+    selected_rows = selection.get("rows", []) if selection else []
     if not selected_rows:
         st.caption("Click a row to analyze that candidate.")
         st.session_state.acc_selected_candidate_seq = ""
