@@ -217,6 +217,9 @@ export default function App() {
           setGene(data.gene);
           setDraft(data.gene);
         }
+        if (!data?.filters?.region_types) {
+          throw new Error("Candidate filters did not load for this gene.");
+        }
         setOverview(data);
         setFilters({
           region_types: data.filters.region_types,

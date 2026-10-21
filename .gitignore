@@ -31,6 +31,7 @@ sequences.txt
 .cache/
 *.ps
 *_lunp
+frontend/public/candidates/
 
 # node / dashboard
 node_modules/
