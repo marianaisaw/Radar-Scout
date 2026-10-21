@@ -1,0 +1,462 @@
+[
+  {
+    "sample": "GTEX-1192X-0011-R10a-SM-4RXXZ",
+    "tissue": "Brain - Frontal Cortex (BA9)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-11H98-0011-R11b-SM-4SFLZ",
+    "tissue": "Brain - Cerebellar Hemisphere",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-11TTK-0011-R7b-SM-4TVFS",
+    "tissue": "Brain - Putamen (basal ganglia)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1211K-0826-SM-7LDFQ",
+    "tissue": "Lung",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1313W-0011-R7b-SM-4ZL3U",
+    "tissue": "Brain - Putamen (basal ganglia)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-13QBU-0426-SM-5A4VT",
+    "tissue": "Heart - Left Ventricle",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-13QJ3-0726-SM-7LDHS",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-13QJ3-0726-SM-7LDHS_rep",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-13RTJ-0011-R7b-SM-5CTCB",
+    "tissue": "Brain - Putamen (basal ganglia)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-13VXU-0011-R11b-SM-5BFQZ",
+    "tissue": "Brain - Cerebellar Hemisphere",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-13X6J-0011-R10b-SM-5CEKT",
+    "tissue": "Brain - Frontal Cortex (BA9)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-145MH-0011-R3b-SM-5CTCM",
+    "tissue": "Brain - Anterior cingulate cortex (BA24)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-14BIL-0011-R10a-SM-5EQV4",
+    "tissue": "Brain - Frontal Cortex (BA9)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-14BMU-0526-SM-5CA2F",
+    "tissue": "Lung",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-14BMU-0526-SM-5CA2F_rep",
+    "tissue": "Lung",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-14BMU-0526-SM-5CA2F_rep2",
+    "tissue": "Lung",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-14C5O-0011-R7b-SM-5GUPO",
+    "tissue": "Brain - Putamen (basal ganglia)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-14XAO-0926-SM-5YQWC",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-15DCD-0011-R10b-SM-5S51M",
+    "tissue": "Brain - Frontal Cortex (BA9)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-15ER7-0011-R5b-SM-5S51V",
+    "tissue": "Brain - Caudate (basal ganglia)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-15ER7-0011-R7a-SM-5QYP2",
+    "tissue": "Brain - Putamen (basal ganglia)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-15RIE-1726-SM-5V7WB",
+    "tissue": "Heart - Left Ventricle",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-17F97-0011-R11b-SM-63KY2",
+    "tissue": "Brain - Cerebellar Hemisphere",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-17MFQ-1926-SM-6659L",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1C64N-0326-SM-6ZHT1",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1GN1W-0226-SM-7AGLJ",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1GN1W-0226-SM-7AGLJ_rep",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1H11D-1226-SM-9P6XJ",
+    "tissue": "Heart - Left Ventricle",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1H3NZ-0011-R11b-SM-AUNOV",
+    "tissue": "Brain - Cerebellar Hemisphere",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1HBPH-0226-SM-7LLUW",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1I6K7-0626-SM-AAEQW",
+    "tissue": "Heart - Left Ventricle",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1I6K7-1226-SM-AAEQX",
+    "tissue": "Lung",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1IDJD-1226-SM-AXRWG",
+    "tissue": "Adipose - Subcutaneous",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1IDJD-0226-SM-AML89",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1IDJF-0826-SM-ABADH",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1IDJU-0726-SM-BXZK2",
+    "tissue": "Heart - Left Ventricle",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1KXAM-0426-SM-CYKMP",
+    "tissue": "Lung",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1KXAM-2426-SM-CYKMT",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-1LVA9-0326-SM-CYRXA",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-OHPL-0326-SM-DPSB8",
+    "tissue": "Heart - Left Ventricle",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-OIZI-0008-SM-2FR3P",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-OXRL-0008-SM-2FR3T",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-PSDG-0008-SM-3NZBI",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-Q2AG-0011-R11A-SM-2EBL2",
+    "tissue": "Brain - Cerebellar Hemisphere",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-Q2AG-0011-R11A-SM-2EBL2_rep",
+    "tissue": "Brain - Cerebellar Hemisphere",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-Q2AG-0011-R11A-SM-2EBL2_rep2",
+    "tissue": "Brain - Cerebellar Hemisphere",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-QDT8-0011-R10A-SM-2FKJB",
+    "tissue": "Brain - Frontal Cortex (BA9)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-R53T-0326-SM-2K8S4",
+    "tissue": "Liver",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-S4P3-1326-SM-2QRBQ",
+    "tissue": "Breast - Mammary Tissue",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-R55E-0008-SM-3QNG3",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-RWS6-0008-SM-3QHWG_direct",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-RWS6-0008-SM-3QHWG",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-R55E-0008-SM-3QNG3_direct",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-RWS6-0008-SM-3QHWG_rep",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-T5JC-0011-R11A-SM-2TT24",
+    "tissue": "Brain - Cerebellar Hemisphere",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-T5JC-0011-R10A-SM-2TT23",
+    "tissue": "Brain - Frontal Cortex (BA9)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-T5JC-0011-R7A-SM-2TT1Z",
+    "tissue": "Brain - Putamen (basal ganglia)",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-UTHO-2426-SM-38ZXF",
+    "tissue": "Liver",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-WFG7-0008-SM-3ML7A",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-WY7C-1126-SM-3GS2X",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-WY7C-1126-SM-3GS2X_rep",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-WY7C-1126-SM-3GS2X_rep2",
+    "tissue": "Heart - Atrial Appendage",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-WY7C-0726-SM-3GLGQ",
+    "tissue": "Liver",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-WYJK-2426-SM-3H5V1",
+    "tissue": "Pancreas",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-WYVS-0526-SM-3H5V7",
+    "tissue": "Lung",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-Y5LM-0426-SM-3YX99",
+    "tissue": "Liver",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-Y5LM-0426-SM-3YX99_rep",
+    "tissue": "Liver",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-Y5LM-0426-SM-3YX99_rep2",
+    "tissue": "Liver",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-ZF29-2026-SM-4TVXH",
+    "tissue": "Liver",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-ZPU1-0826-SM-4UJSC",
+    "tissue": "Liver",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-ZT9X-0326-SM-4U9QG",
+    "tissue": "Lung",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-ZT9X-1826-SM-4V2KV",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-ZT9X-1826-SM-4V2KV_rep",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-ZT9X-1826-SM-4V2KV_rep2",
+    "tissue": "Muscle - Skeletal",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-ZVZP-0226-SM-4VEIO",
+    "tissue": "Heart - Left Ventricle",
+    "use_for_mean": true
+  },
+  {
+    "sample": "K562_ampure",
+    "tissue": "K562 cell line",
+    "use_for_mean": true
+  },
+  {
+    "sample": "K562_ampure_70ng",
+    "tissue": "K562 cell line",
+    "use_for_mean": true
+  },
+  {
+    "sample": "K562_extrawash",
+    "tissue": "K562 cell line",
+    "use_for_mean": true
+  },
+  {
+    "sample": "K562_extrawashwarm",
+    "tissue": "K562 cell line",
+    "use_for_mean": true
+  },
+  {
+    "sample": "GTEX-QEG5-0008-SM-3QHW2_ctrl",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-QEG5-0008-SM-3QHW2_exp",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-QV44-0008-SM-3QNG7_ctrl1",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-QV44-0008-SM-3QNG7_ctrl2",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-QV44-0008-SM-3QNG7_exp",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-S4Z8-0008-SM-2Y983_ctrl",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-S4Z8-0008-SM-2Y983_exp1",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-S4Z8-0008-SM-2Y983_exp2",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-S95S-0008-SM-3RQ8B_ctrl",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-S95S-0008-SM-3RQ8B_exp1",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-S95S-0008-SM-3RQ8B_exp2",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-WY7C-0008-SM-3NZB5_ctrl",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  },
+  {
+    "sample": "GTEX-WY7C-0008-SM-3NZB5_exp",
+    "tissue": "Cells - Cultured fibroblasts",
+    "use_for_mean": false
+  }
+]

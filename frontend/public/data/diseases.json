@@ -1,0 +1,486 @@
+{
+  "diseases": [
+    {
+      "disease": "cardiac fibrosis",
+      "key": "cardiac_fibrosis_pooled",
+      "n_genes": 12252,
+      "n_cohorts": 5,
+      "n_donors": {
+        "P": 61,
+        "H": 18,
+        "B": 16
+      },
+      "umap_key": null,
+      "has_umap": false,
+      "cohorts": [
+        {
+          "key": "heart_aortic_stenosis",
+          "cohort": "GEO GSE270517",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from cardiac fibrosis tissue",
+            "p_cells": 2958,
+            "p_donors": 6,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 282,
+            "ref_donors": 1,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE270517"
+          }
+        },
+        {
+          "key": "heart_dcm_acm",
+          "cohort": "CELLxGENE",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from cardiac fibrosis tissue",
+            "p_cells": 60000,
+            "p_donors": 61,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 36939,
+            "ref_donors": 18,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "https://datasets.cellxgene.cziscience.com/9b7c7203-91cd-4e87-aff7-92ed572307dc.h5ad"
+          }
+        },
+        {
+          "key": "heart_du_hf",
+          "cohort": "GEO GSE247468",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from cardiac fibrosis tissue",
+            "p_cells": 25531,
+            "p_donors": 4,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 8066,
+            "ref_donors": 2,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE247468"
+          }
+        },
+        {
+          "key": "heart_kuppe_mi",
+          "cohort": "CELLxGENE",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from cardiac fibrosis tissue",
+            "p_cells": 37857,
+            "p_donors": 16,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 9452,
+            "ref_donors": 4,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "https://datasets.cellxgene.cziscience.com/4780eb7d-4c7c-4630-8705-471f0de8e27a.h5ad"
+          }
+        },
+        {
+          "key": "heart_rao",
+          "cohort": "GEO GSE145154",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from cardiac fibrosis tissue",
+            "p_cells": 8774,
+            "p_donors": 20,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 5147,
+            "ref_donors": 4,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE145154"
+          }
+        }
+      ]
+    },
+    {
+      "disease": "keloid",
+      "key": "keloid_pooled",
+      "n_genes": 10815,
+      "n_cohorts": 5,
+      "n_donors": {
+        "P": 4,
+        "H": 214,
+        "B": 4
+      },
+      "umap_key": "keloid_subpop",
+      "has_umap": true,
+      "cohorts": [
+        {
+          "key": "keloid_dermalatlas",
+          "cohort": "CELLxGENE",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from keloid tissue",
+            "p_cells": 1270,
+            "p_donors": 4,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 60000,
+            "ref_donors": 207,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "https://datasets.cellxgene.cziscience.com/8ae4471a-2e70-47b5-bc42-4f0df26a9996.h5ad"
+          }
+        },
+        {
+          "key": "keloid_gse181316",
+          "cohort": "GEO GSE181316",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from keloid tissue",
+            "p_cells": 40277,
+            "p_donors": 4,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 11549,
+            "ref_donors": 3,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE181316"
+          }
+        },
+        {
+          "key": "keloid_subpop",
+          "cohort": "CELLxGENE Census",
+          "cell_type": "skin fibroblast",
+          "comparison": {
+            "p_label": "skin fibroblast from keloid tissue",
+            "p_cells": 363,
+            "p_donors": 4,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "skin fibroblast from healthy / control donors",
+            "ref_cells": 40000,
+            "ref_donors": 214,
+            "cell_type": "skin fibroblast",
+            "source": ""
+          }
+        },
+        {
+          "key": "keloid_geo",
+          "cohort": "GEO GSE163973",
+          "cell_type": "skin fibroblast",
+          "comparison": {
+            "p_label": "skin fibroblast from keloid tissue",
+            "p_cells": 10612,
+            "p_donors": 3,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "skin fibroblast from healthy / control donors",
+            "ref_cells": 9781,
+            "ref_donors": 3,
+            "cell_type": "skin fibroblast",
+            "source": "GSE163973"
+          }
+        },
+        {
+          "key": "keloid_deng_mfb",
+          "cohort": "Deng MFB vs normal scar",
+          "cell_type": "pathological MFB (Deng C3)",
+          "comparison": {
+            "p_label": "Keloid pathological MFB (Deng cluster 3)",
+            "p_cells": 0,
+            "p_donors": 0,
+            "ref_pop": "H",
+            "ref_kind": "control",
+            "ref_label": "Normal-scar fibroblasts (same cell type, non-keloid scar tissue)",
+            "ref_cells": 0,
+            "ref_donors": 0,
+            "cell_type": "pathological MFB (Deng C3)",
+            "source": ""
+          }
+        }
+      ]
+    },
+    {
+      "disease": "kidney fibrosis",
+      "key": "kidney_fibrosis_pooled",
+      "n_genes": 12679,
+      "n_cohorts": 4,
+      "n_donors": {
+        "P": 43,
+        "H": 25,
+        "B": 54
+      },
+      "umap_key": null,
+      "has_umap": false,
+      "cohorts": [
+        {
+          "key": "kidney_dkd",
+          "cohort": "GEO GSE209781",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from kidney fibrosis tissue",
+            "p_cells": 645,
+            "p_donors": 3,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 1555,
+            "ref_donors": 3,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE209781"
+          }
+        },
+        {
+          "key": "kidney_kpmp_sc",
+          "cohort": "CELLxGENE",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from kidney fibrosis tissue",
+            "p_cells": 517,
+            "p_donors": 43,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 1050,
+            "ref_donors": 21,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "https://datasets.cellxgene.cziscience.com/255ce81a-eb4e-48ff-9f18-e50455ccb24d.h5ad"
+          }
+        },
+        {
+          "key": "kidney_kpmp_sn",
+          "cohort": "CELLxGENE",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from kidney fibrosis tissue",
+            "p_cells": 8649,
+            "p_donors": 39,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 8269,
+            "ref_donors": 25,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "https://datasets.cellxgene.cziscience.com/02d5db96-d67e-45f2-b556-b6bd99753665.h5ad"
+          }
+        },
+        {
+          "key": "kidney_obstruction",
+          "cohort": "CELLxGENE",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from kidney fibrosis tissue",
+            "p_cells": 559,
+            "p_donors": 5,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 167,
+            "ref_donors": 7,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "https://datasets.cellxgene.cziscience.com/0fe5eee4-380d-4bd9-8735-ada5e03021d9.h5ad"
+          }
+        }
+      ]
+    },
+    {
+      "disease": "liver fibrosis",
+      "key": "liver_fibrosis_pooled",
+      "n_genes": 12522,
+      "n_cohorts": 3,
+      "n_donors": {
+        "P": 28,
+        "H": 20
+      },
+      "umap_key": null,
+      "has_umap": false,
+      "cohorts": [
+        {
+          "key": "liver_masld",
+          "cohort": "GEO GSE289173",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from liver fibrosis tissue",
+            "p_cells": 3629,
+            "p_donors": 28,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 5028,
+            "ref_donors": 20,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE289173"
+          }
+        },
+        {
+          "key": "liver_nash",
+          "cohort": "GEO GSE212837",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from liver fibrosis tissue",
+            "p_cells": 4028,
+            "p_donors": 15,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 930,
+            "ref_donors": 3,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE212837"
+          }
+        },
+        {
+          "key": "liver_ramachandran",
+          "cohort": "GEO GSE136103",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from liver fibrosis tissue",
+            "p_cells": 720,
+            "p_donors": 9,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 1530,
+            "ref_donors": 11,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE136103"
+          }
+        }
+      ]
+    },
+    {
+      "disease": "pulmonary fibrosis",
+      "key": "pulmonary_fibrosis_pooled",
+      "n_genes": 13078,
+      "n_cohorts": 7,
+      "n_donors": {
+        "P": 37,
+        "H": 422,
+        "B": 55
+      },
+      "umap_key": "pulmonary_fibrosis",
+      "has_umap": true,
+      "cohorts": [
+        {
+          "key": "lung_adams",
+          "cohort": "GEO GSE136831",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from pulmonary fibrosis tissue",
+            "p_cells": 4329,
+            "p_donors": 32,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 1051,
+            "ref_donors": 26,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE136831"
+          }
+        },
+        {
+          "key": "lung_habermann",
+          "cohort": "GEO GSE135893",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from pulmonary fibrosis tissue",
+            "p_cells": 2311,
+            "p_donors": 12,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 342,
+            "ref_donors": 9,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE135893"
+          }
+        },
+        {
+          "key": "lung_morse",
+          "cohort": "GEO GSE128033",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from pulmonary fibrosis tissue",
+            "p_cells": 4096,
+            "p_donors": 8,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 1449,
+            "ref_donors": 8,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE128033"
+          }
+        },
+        {
+          "key": "lung_tsukui",
+          "cohort": "GEO GSE132771",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from pulmonary fibrosis tissue",
+            "p_cells": 20867,
+            "p_donors": 6,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 14959,
+            "ref_donors": 6,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE132771"
+          }
+        },
+        {
+          "key": "lung_vannan_ipf",
+          "cohort": "CELLxGENE",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from pulmonary fibrosis tissue",
+            "p_cells": 4766,
+            "p_donors": 37,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 2262,
+            "ref_donors": 44,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "https://datasets.cellxgene.cziscience.com/c3d9262e-0dc5-4eca-bf20-56e6d96d0306.h5ad"
+          }
+        },
+        {
+          "key": "lung_wt1_snrna",
+          "cohort": "GEO GSE279404",
+          "cell_type": "Fibroblast / myofibroblast",
+          "comparison": {
+            "p_label": "Fibroblast / myofibroblast from pulmonary fibrosis tissue",
+            "p_cells": 12445,
+            "p_donors": 18,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "Fibroblast / myofibroblast from healthy / control donors",
+            "ref_cells": 4790,
+            "ref_donors": 11,
+            "cell_type": "Fibroblast / myofibroblast",
+            "source": "GSE279404"
+          }
+        },
+        {
+          "key": "pulmonary_fibrosis",
+          "cohort": "CELLxGENE Census",
+          "cell_type": "fibroblast",
+          "comparison": {
+            "p_label": "fibroblast from pulmonary fibrosis tissue",
+            "p_cells": 236,
+            "p_donors": 3,
+            "ref_pop": "H",
+            "ref_kind": "healthy",
+            "ref_label": "fibroblast from healthy / control donors",
+            "ref_cells": 25000,
+            "ref_donors": 422,
+            "cell_type": "fibroblast",
+            "source": ""
+          }
+        }
+      ]
+    }
+  ]
+}

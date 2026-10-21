@@ -2,6 +2,7 @@
 .venv/
 venv/
 __pycache__/
+*.pyc
 *.py[cod]
 .pytest_cache/
 .ipynb_checkpoints/
@@ -16,6 +17,20 @@ outputs/
 *.parquet
 *.loom
 *.mtx
+
+# thermodynamics candidate table (too large for git)
+radar_candidates.db
+radar_candidates.db-shm
+radar_candidates.db-wal
+radar_genes.zip
+*.zip.part
+rnaplfold_out/
+human_RADAR_sensor_candidates.csv.gz
+sequences.txt
+.streamlit/
+.cache/
+*.ps
+*_lunp
 
 # node / dashboard
 node_modules/

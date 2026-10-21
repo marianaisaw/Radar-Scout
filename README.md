@@ -1,3 +1,24 @@
+# RADAR-Thermodynamics
+
+The product UI is a React dashboard (not Streamlit). Python still runs the science: SQLite candidates, GTEx long-read isoforms, Ensembl FASTA, RNAplfold, RNAfold.
+
+```bash
+python -m pip install -r requirements.txt
+cd frontend && npm install && cd ..
+uvicorn api:app --reload --port 8000
+# in another terminal:
+cd frontend && npm run dev
+```
+
+Open http://localhost:5173
+
+Existing RADAR design identifies sequence-compatible targets, but structural accessibility and hybridization thermodynamics may help predict which compatible endogenous targets will actually perform well, reducing the amount of empirical screening required.
+
+- Commit 1: READ.ME file
+- Commit 2: Now we have 10 isoforms of ADAM12. I set up a Streamlit app in 'fasta.py' that takes a human gene symbol, downloads its transcript FASTA from NCBI Datasets, and lets us view or download it. A 'sequences.txt' file contains the pasted ADAM12 FASTA from the internet and from the app; those two pastes are the same NCBI Datasets multi-FASTA (10 isoforms, same headers and sequences). The actual sequence for the 10 ADAM12 isoforms is stored in ADAM12_transcriptsFile.fasta
+
+---
+
 # RADAR-Scout
 
 **A single-cell RNA target-prioritization platform for RADAR-based, disease-agnostic therapeutics.**
@@ -17,7 +38,7 @@ The scientific heart of the project is the **RADAR Activation Compatibility Scor
 (RACS)**, a signal-detection framework that formalizes the trade-off between
 transcript **abundance** and **specificity**. RADAR needs a target to exceed an
 activation threshold, but the most abundant transcripts are rarely specific and
-the most specific are often too scarce to fire the sensor. 
+the most specific are often too scarce to fire the sensor.
 
 > **Full derivation:** [`docs/RACS_framework.md`](docs/RACS_framework.md).
 > Result in one line: *RADAR target selection = maximizing the donor-aware AUC
